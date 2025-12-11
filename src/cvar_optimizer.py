@@ -545,8 +545,7 @@ class CVaR(base_optimizer.BaseOptimizer):
         timing_dict : dict
             Timing information for each setup loop in seconds
         """
-
-        #lazy imports
+        # Lazy import
         from cuopt.linear_programming.problem import (
             CONTINUOUS,
             INTEGER,
@@ -554,8 +553,8 @@ class CVaR(base_optimizer.BaseOptimizer):
             MINIMIZE,
             Problem,
         )
-        from cuopt.linear_programming.solver_settings import SolverSettings
-        
+            
+            
         num_assets = self.n_assets
         num_scen = len(self.data.p)
 
@@ -874,6 +873,8 @@ class CVaR(base_optimizer.BaseOptimizer):
         cash : float
             Optimal cash allocation
         """
+        # Lazy import
+        from cuopt.linear_programming.solver_settings import SolverSettings
         # Configure solver settings
         settings = SolverSettings()
         if solver_settings:
