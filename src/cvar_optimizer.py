@@ -22,14 +22,6 @@ from typing import Optional
 import cvxpy as cp
 import numpy as np
 import pandas as pd
-from cuopt.linear_programming.problem import (
-    CONTINUOUS,
-    INTEGER,
-    MAXIMIZE,
-    MINIMIZE,
-    Problem,
-)
-from cuopt.linear_programming.solver_settings import SolverSettings
 
 from . import base_optimizer
 from . import cvar_utils
@@ -553,6 +545,16 @@ class CVaR(base_optimizer.BaseOptimizer):
         timing_dict : dict
             Timing information for each setup loop in seconds
         """
+        # Lazy import
+        from cuopt.linear_programming.problem import (
+            CONTINUOUS,
+            INTEGER,
+            MAXIMIZE,
+            MINIMIZE,
+            Problem,
+            LinearExpression,
+        )
+            
         num_assets = self.n_assets
         num_scen = len(self.data.p)
 
@@ -605,22 +607,23 @@ class CVaR(base_optimizer.BaseOptimizer):
 
         # Add budget constraint: sum(w) + c = 1
         start_time = time.time()
-        budget_expr = variables["c"]
-        for i in range(num_assets):
-            budget_expr = budget_expr + variables["w"][i]
+        # Use LinearExpression to avoid recursion: sum(w) + c = 1
+        budget_vars = variables["w"] + [variables["c"]]
+        budget_coeffs = [1.0] * num_assets + [1.0]
+        budget_expr = LinearExpression(budget_vars, budget_coeffs, 0.0)
         problem.addConstraint(budget_expr == 1.0, name="budget_constraint")
         timing_dict["budget_constraint"] = time.time() - start_time
 
         # Add CVaR scenario constraints: u[j] + t >= -sum(R[i,j] * w[i])
+        # Rewritten as: t + u[j] + sum(R[i,j] * w[i]) >= 0
         start_time = time.time()
         for j in range(num_scen):
-            scenario_return_expr = variables["t"] + variables["u"][j]
-            for i in range(num_assets):
-                scenario_return_expr = (
-                    scenario_return_expr + self.data.R[i, j] * variables["w"][i]
-                )
+            # Build constraint using LinearExpression
+            scenario_vars = [variables["t"], variables["u"][j]] + variables["w"]
+            scenario_coeffs = [1.0, 1.0] + [float(self.data.R[i, j]) for i in range(num_assets)]
+            scenario_expr = LinearExpression(scenario_vars, scenario_coeffs, 0.0)
             problem.addConstraint(
-                scenario_return_expr >= 0.0, name=f"cvar_scenario_{j}"
+                scenario_expr >= 0.0, name=f"cvar_scenario_{j}"
             )
         timing_dict["cvar_constraints"] = time.time() - start_time
 
@@ -628,28 +631,27 @@ class CVaR(base_optimizer.BaseOptimizer):
         # For cuOpt, we need to add separate variables for positive and negative parts
         if self.params.L_tar < float("inf"):
             start_time = time.time()
-            leverage_expr = None
             variables["w_pos"] = []
             variables["w_neg"] = []
 
+            # First, add all auxiliary variables
             for i in range(num_assets):
                 w_pos = problem.addVariable(lb=0.0, vtype=CONTINUOUS, name=f"w_pos_{i}")
                 w_neg = problem.addVariable(lb=0.0, vtype=CONTINUOUS, name=f"w_neg_{i}")
                 variables["w_pos"].append(w_pos)
                 variables["w_neg"].append(w_neg)
 
-                # w[i] = w_pos[i] - w_neg[i]
-                problem.addConstraint(
-                    variables["w"][i] == w_pos - w_neg, name=f"weight_decomposition_{i}"
-                )
+            # Then, add decomposition constraints: w[i] = w_pos[i] - w_neg[i]
+            for i in range(num_assets):
+                decomp_vars = [variables["w"][i], variables["w_pos"][i], variables["w_neg"][i]]
+                decomp_coeffs = [1.0, -1.0, 1.0]  # w - w_pos + w_neg = 0
+                decomp_expr = LinearExpression(decomp_vars, decomp_coeffs, 0.0)
+                problem.addConstraint(decomp_expr == 0.0, name=f"weight_decomposition_{i}")
 
-                # Add to leverage sum
-                if leverage_expr is None:
-                    leverage_expr = w_pos + w_neg
-                else:
-                    leverage_expr = leverage_expr + w_pos + w_neg
-
-            # Leverage constraint
+            # Leverage constraint: sum(w_pos + w_neg) <= L_tar
+            leverage_vars = variables["w_pos"] + variables["w_neg"]
+            leverage_coeffs = [1.0] * (2 * num_assets)
+            leverage_expr = LinearExpression(leverage_vars, leverage_coeffs, 0.0)
             problem.addConstraint(
                 leverage_expr <= self.params.L_tar, name="leverage_constraint"
             )
@@ -668,31 +670,26 @@ class CVaR(base_optimizer.BaseOptimizer):
                 variables["y"].append(y_var)
 
             # Add cardinality constraint: sum(y_i) <= cardinality
-            cardinality_expr = None
-            for i in range(num_assets):
-                if cardinality_expr is None:
-                    cardinality_expr = variables["y"][i]
-                else:
-                    cardinality_expr = cardinality_expr + variables["y"][i]
+            cardinality_coeffs = [1.0] * num_assets
+            cardinality_expr = LinearExpression(variables["y"], cardinality_coeffs, 0.0)
             problem.addConstraint(
                 cardinality_expr <= self.params.cardinality,
                 name="cardinality_constraint",
             )
 
-            # Add gating constraints: w_min_i * y_i <= w_i <= w_max_i * y_i
+            # Add wegiht constraints: w_min_i * y_i <= w_i <= w_max_i * y_i
             for i in range(num_assets):
-                # Lower bound constraint: w[i] >= w_min[i] * y[i]
-                problem.addConstraint(
-                    variables["w"][i]
-                    >= float(self.params.w_min[i]) * variables["y"][i],
-                    name=f"cardinality_lower_{i}",
-                )
-                # Upper bound constraint: w[i] <= w_max[i] * y[i]
-                problem.addConstraint(
-                    variables["w"][i]
-                    <= float(self.params.w_max[i]) * variables["y"][i],
-                    name=f"cardinality_upper_{i}",
-                )
+                # Lower bound: w[i] - w_min[i] * y[i] >= 0
+                lower_vars = [variables["w"][i], variables["y"][i]]
+                lower_coeffs = [1.0, -float(self.params.w_min[i])]
+                lower_expr = LinearExpression(lower_vars, lower_coeffs, 0.0)
+                problem.addConstraint(lower_expr >= 0.0, name=f"cardinality_lower_{i}")
+                
+                # Upper bound: w[i] - w_max[i] * y[i] <= 0
+                upper_vars = [variables["w"][i], variables["y"][i]]
+                upper_coeffs = [1.0, -float(self.params.w_max[i])]
+                upper_expr = LinearExpression(upper_vars, upper_coeffs, 0.0)
+                problem.addConstraint(upper_expr <= 0.0, name=f"cardinality_upper_{i}")
 
             timing_dict["cardinality_constraints"] = time.time() - start_time
             print(
@@ -705,10 +702,10 @@ class CVaR(base_optimizer.BaseOptimizer):
         if self.existing_portfolio is not None and self.params.T_tar is not None:
             start_time = time.time()
             w_prev = np.array(self.existing_portfolio.weights)
-            turnover_expr = None
             variables["turnover_pos"] = []
             variables["turnover_neg"] = []
 
+            # First, add all auxiliary variables
             for i in range(num_assets):
                 to_pos = problem.addVariable(
                     lb=0.0, vtype=CONTINUOUS, name=f"turnover_pos_{i}"
@@ -719,19 +716,20 @@ class CVaR(base_optimizer.BaseOptimizer):
                 variables["turnover_pos"].append(to_pos)
                 variables["turnover_neg"].append(to_neg)
 
-                # (w[i] - w_prev[i]) = turnover_pos[i] - turnover_neg[i]
+            # Decomposition constraints: w[i] - w_prev[i] = to_pos[i] - to_neg[i]
+            # Rewritten: w[i] - to_pos[i] + to_neg[i] = w_prev[i]
+            for i in range(num_assets):
+                decomp_vars = [variables["w"][i], variables["turnover_pos"][i], variables["turnover_neg"][i]]
+                decomp_coeffs = [1.0, -1.0, 1.0]
+                decomp_expr = LinearExpression(decomp_vars, decomp_coeffs, 0.0)
                 problem.addConstraint(
-                    variables["w"][i] - float(w_prev[i]) == to_pos - to_neg,
-                    name=f"turnover_decomposition_{i}",
+                    decomp_expr == float(w_prev[i]), name=f"turnover_decomposition_{i}"
                 )
 
-                # Add to turnover sum
-                if turnover_expr is None:
-                    turnover_expr = to_pos + to_neg
-                else:
-                    turnover_expr = turnover_expr + to_pos + to_neg
-
-            # Turnover constraint
+            # Turnover constraint: sum(to_pos + to_neg) <= T_tar
+            turnover_vars = variables["turnover_pos"] + variables["turnover_neg"]
+            turnover_coeffs = [1.0] * (2 * num_assets)
+            turnover_expr = LinearExpression(turnover_vars, turnover_coeffs, 0.0)
             problem.addConstraint(
                 turnover_expr <= self.params.T_tar, name="turnover_constraint"
             )
@@ -748,23 +746,21 @@ class CVaR(base_optimizer.BaseOptimizer):
                     self.tickers.index(ticker) for ticker in group_constraint["tickers"]
                 ]
 
-                # Build sum expression for weights in this group
-                group_sum_expr = None
-                for i in tickers_index:
-                    if group_sum_expr is None:
-                        group_sum_expr = variables["w"][i]
-                    else:
-                        group_sum_expr = group_sum_expr + variables["w"][i]
+                # Build sum expression using LinearExpression
+                if len(tickers_index) > 0:
+                    group_vars = [variables["w"][i] for i in tickers_index]
+                    group_coeffs = [1.0] * len(tickers_index)
+                    group_sum_expr = LinearExpression(group_vars, group_coeffs, 0.0)
 
-                # Add upper and lower bound constraints for the group
-                problem.addConstraint(
-                    group_sum_expr <= group_constraint["weight_bounds"]["w_max"],
-                    name=f"group_{group_idx}_upper",
-                )
-                problem.addConstraint(
-                    group_sum_expr >= group_constraint["weight_bounds"]["w_min"],
-                    name=f"group_{group_idx}_lower",
-                )
+                    # Add upper and lower bound constraints for the group
+                    problem.addConstraint(
+                        group_sum_expr <= group_constraint["weight_bounds"]["w_max"],
+                        name=f"group_{group_idx}_upper",
+                    )
+                    problem.addConstraint(
+                        group_sum_expr >= group_constraint["weight_bounds"]["w_min"],
+                        name=f"group_{group_idx}_lower",
+                    )
 
             timing_dict["group_constraints"] = time.time() - start_time
             print(f"Group Constraints: {len(self.params.group_constraints)} groups")
@@ -773,27 +769,27 @@ class CVaR(base_optimizer.BaseOptimizer):
 
         # Set up objective function
         start_time = time.time()
-        expected_return_expr = None
-        for i in range(num_assets):
-            term = float(self.data.mean[i]) * variables["w"][i]
-            if expected_return_expr is None:
-                expected_return_expr = term
-            else:
-                expected_return_expr = expected_return_expr + term
+        
+        # Build expected return expression using LinearExpression
+        expected_return_coeffs = [float(self.data.mean[i]) for i in range(num_assets)]
+        expected_return_expr = LinearExpression(variables["w"], expected_return_coeffs, 0.0)
 
-        cvar_expr = variables["t"]
-        for j in range(num_scen):
-            cvar_expr = (
-                cvar_expr
-                + float(self.data.p[j] / (1 - self.params.confidence))
-                * variables["u"][j]
-            )
+        # Build CVaR expression using LinearExpression
+        # CVaR = t + sum(p[j] / (1 - alpha)) * u[j]
+        cvar_vars = [variables["t"]] + variables["u"]
+        cvar_coeffs = [1.0] + [float(self.data.p[j] / (1 - self.params.confidence)) for j in range(num_scen)]
+        cvar_expr = LinearExpression(cvar_vars, cvar_coeffs, 0.0)
 
         if self.params.cvar_limit is None:
             # Minimize: risk_aversion * CVaR - expected_return
-            objective_expr = (
-                float(self.params.risk_aversion) * cvar_expr - expected_return_expr
+            # Combine into single LinearExpression: risk_aversion * cvar_coeffs - expected_return_coeffs
+            obj_vars = [variables["t"]] + variables["u"] + variables["w"]
+            obj_coeffs = (
+                [float(self.params.risk_aversion)]  # t coefficient
+                + [float(self.params.risk_aversion) * float(self.data.p[j] / (1 - self.params.confidence)) for j in range(num_scen)]  # u coefficients
+                + [-float(self.data.mean[i]) for i in range(num_assets)]  # w coefficients (negative for return)
             )
+            objective_expr = LinearExpression(obj_vars, obj_coeffs, 0.0)
             problem.setObjective(objective_expr, sense=MINIMIZE)
         else:
             # Maximize: expected_return subject to CVaR <= cvar_limit
@@ -871,6 +867,8 @@ class CVaR(base_optimizer.BaseOptimizer):
         cash : float
             Optimal cash allocation
         """
+        # Lazy import
+        from cuopt.linear_programming.solver_settings import SolverSettings
         # Configure solver settings
         settings = SolverSettings()
         if solver_settings:

@@ -58,7 +58,7 @@ def calculate_returns(
     :input_dataset: pandas DataFrame or the path to the input dataset
     :return_type: str, type of the returns. For example, "LOG" means log returns,
             "PNL" means the dataset is already in the format of P&L data.
-            "NORMAL" means absolute returns.
+            "LINEAR" means absolute returns.
     :regime_dict: dict of the format {'name': , 'range':(start, end)}
     :returns_compute_settings: Union[dict, str], dictionary containing returns calculation settings or the return type.
             If a string is provided, it is the return type.
@@ -86,8 +86,9 @@ def calculate_returns(
     else:
         input_data = input_dataset
 
-    if regime_dict is None:
+    if regime_dict is None or regime_dict.get("range") is None:
         input_data = input_data
+        regime_dict = {"name": "Default", "range": (input_data.index[0], input_data.index[-1])}
     else:
         start, end = regime_dict["range"]
         input_data = input_data.loc[start:end]
@@ -98,7 +99,7 @@ def calculate_returns(
         returns_dataframe = calculate_log_returns(input_data, freq)
     elif return_type == "PNL":
         returns_dataframe = input_data
-    elif return_type == "NORMAL":
+    elif return_type == "LINEAR":
         returns_dataframe = compute_abs_returns(input_data, freq)
     else:
         raise NotImplementedError("Invalid return type!")
