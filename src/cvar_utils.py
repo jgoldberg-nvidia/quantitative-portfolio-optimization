@@ -90,7 +90,7 @@ def generate_samples_kde(
         kde = cuml.neighbors.KernelDensity(kernel=kernel, bandwidth=bandwidth).fit(
             returns_data
         )
-        new_samples = kde.sample(num_scen).get()  # convert to numpy array
+        new_samples = kde.sample(num_scen)  # convert to numpy array
 
         end_time = time.time()
         kde_time = end_time - start_time
