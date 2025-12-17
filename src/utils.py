@@ -100,7 +100,7 @@ def calculate_returns(
     elif return_type == "PNL":
         returns_dataframe = input_data
     elif return_type == "LINEAR":
-        returns_dataframe = compute_abs_returns(input_data, freq)
+        returns_dataframe = compute_linear_returns(input_data, freq)
     else:
         raise NotImplementedError("Invalid return type!")
 
@@ -129,7 +129,7 @@ def calculate_log_returns(price_data, freq=1):
     return returns_dataframe.dropna(how="all").fillna(0)
 
 
-def compute_abs_returns(price_data, freq=1):
+def compute_linear_returns(price_data, freq=1):
     """
     compute the simple returns using freq. For example, freq = 1 means today - yesterday.
     """
