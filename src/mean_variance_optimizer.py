@@ -354,6 +354,7 @@ class MeanVariance(base_optimizer.BaseOptimizer):
             CONTINUOUS,
             MINIMIZE,
             Problem,
+            LinearExpression,
             QuadraticExpression,
         )
 
@@ -406,26 +407,26 @@ class MeanVariance(base_optimizer.BaseOptimizer):
 
         # Step 3a: Budget constraint: sum(w) + c = 1
         t0 = time.time()
-        budget_expr = w_vars[0]
-        for i in range(1, num_assets):
-            budget_expr = budget_expr + w_vars[i]
-        budget_expr = budget_expr + variables["c"]
+        budget_vars = w_vars + [variables["c"]]
+        budget_coeffs = [1.0] * (num_assets + 1)
+        budget_expr = LinearExpression(budget_vars, budget_coeffs, 0.0)
         problem.addConstraint(budget_expr == 1.0, name="budget")
         timing["budget_constraint"] = time.time() - t0
 
-        # Step 3b: Decomposition constraints: w[i] = w_pos[i] - w_neg[i]
+        # Step 3b: Decomposition constraints: w[i] - w_pos[i] + w_neg[i] = 0
         t0 = time.time()
         for i in range(num_assets):
-            problem.addConstraint(
-                w_vars[i] == w_pos_vars[i] - w_neg_vars[i], name=f"decomp_{i}"
-            )
+            decomp_vars = [w_vars[i], w_pos_vars[i], w_neg_vars[i]]
+            decomp_coeffs = [1.0, -1.0, 1.0]
+            decomp_expr = LinearExpression(decomp_vars, decomp_coeffs, 0.0)
+            problem.addConstraint(decomp_expr == 0.0, name=f"decomp_{i}")
         timing["decomp_constraints"] = time.time() - t0
 
         # Step 3c: Leverage constraint: sum(w_pos + w_neg) <= L_tar
         t0 = time.time()
-        leverage_expr = w_pos_vars[0] + w_neg_vars[0]
-        for i in range(1, num_assets):
-            leverage_expr = leverage_expr + w_pos_vars[i] + w_neg_vars[i]
+        leverage_vars = w_pos_vars + w_neg_vars
+        leverage_coeffs = [1.0] * (2 * num_assets)
+        leverage_expr = LinearExpression(leverage_vars, leverage_coeffs, 0.0)
         problem.addConstraint(leverage_expr <= self.params.L_tar, name="leverage")
         timing["leverage_constraint"] = time.time() - t0
 
@@ -446,15 +447,19 @@ class MeanVariance(base_optimizer.BaseOptimizer):
                 turnover_pos_vars.append(to_pos)
                 turnover_neg_vars.append(to_neg)
 
+            # Decomposition constraints: w[i] - to_pos[i] + to_neg[i] = w_prev[i]
             for i in range(num_assets):
+                decomp_vars = [w_vars[i], turnover_pos_vars[i], turnover_neg_vars[i]]
+                decomp_coeffs = [1.0, -1.0, 1.0]
+                decomp_expr = LinearExpression(decomp_vars, decomp_coeffs, 0.0)
                 problem.addConstraint(
-                    w_vars[i] - float(w_prev[i]) == turnover_pos_vars[i] - turnover_neg_vars[i],
-                    name=f"turnover_decomp_{i}",
+                    decomp_expr == float(w_prev[i]), name=f"turnover_decomp_{i}"
                 )
 
-            turnover_expr = turnover_pos_vars[0] + turnover_neg_vars[0]
-            for i in range(1, num_assets):
-                turnover_expr = turnover_expr + turnover_pos_vars[i] + turnover_neg_vars[i]
+            # Turnover constraint: sum(to_pos + to_neg) <= T_tar
+            turnover_vars = turnover_pos_vars + turnover_neg_vars
+            turnover_coeffs = [1.0] * (2 * num_assets)
+            turnover_expr = LinearExpression(turnover_vars, turnover_coeffs, 0.0)
             problem.addConstraint(turnover_expr <= self.params.T_tar, name="turnover")
 
             variables["turnover_pos"] = turnover_pos_vars
@@ -472,9 +477,9 @@ class MeanVariance(base_optimizer.BaseOptimizer):
                     for ticker in group_constraint["tickers"]
                 ]
                 if len(tickers_index) > 0:
-                    group_expr = w_vars[tickers_index[0]]
-                    for i in tickers_index[1:]:
-                        group_expr = group_expr + w_vars[i]
+                    group_vars = [w_vars[i] for i in tickers_index]
+                    group_coeffs = [1.0] * len(tickers_index)
+                    group_expr = LinearExpression(group_vars, group_coeffs, 0.0)
                     problem.addConstraint(
                         group_expr <= group_constraint["weight_bounds"]["w_max"],
                         name=f"group_{group_idx}_upper",
