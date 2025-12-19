@@ -19,6 +19,7 @@ version = "1.0.0"
 
 from .cvar_data import CvarData
 from .cvar_parameters import CvarParameters
+from .mean_var_parameters import MeanVarParameters
 from .settings import (
     ApiSettings,
     KDESettings,
@@ -29,6 +30,7 @@ from .settings import (
 __all__ = [
     "CvarData",
     "CvarParameters",
+    "MeanVarParameters",
     "ApiSettings",
     "KDESettings",
     "ReturnsComputeSettings",
