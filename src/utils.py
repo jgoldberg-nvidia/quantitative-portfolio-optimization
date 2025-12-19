@@ -24,7 +24,9 @@ import pandas as pd
 import seaborn as sns
 import yfinance as yf
 
-from .settings import ReturnsComputeSettings
+from .cvar_parameters import CvarParameters
+from .mean_variance_parameters import MeanVarianceParameters
+from .settings import ReturnsComputeSettings, ScenarioGenerationSettings
 
 
 def get_input_data(filepath):
@@ -543,3 +545,244 @@ def download_data(dataset_dir):
     data = data['Close'].dropna(axis = 1)
 
     data.to_csv(dataset_dir)
+
+
+def create_synthetic_stock_dataset(
+    training_directory: str, regime_name: str, regime_range: tuple, num_synthetic: int
+):
+    """Create synthetic stock dataset based on training data.
+
+    Args:
+        training_directory (str): Path to the training data directory.
+        regime_name (str): Name of the market regime.
+        regime_range (tuple): Date range for the regime (start_date, end_date).
+        num_synthetic (int): Number of synthetic datasets to generate.
+
+    Returns:
+        str: Path to the saved synthetic dataset file.
+
+    Raises:
+        ValueError: If num_synthetic is less than or equal to 0.
+
+    Example:
+        >>> training_dir = "data/stock_data/sp500.csv"
+        >>> regime = "bull_market"
+        >>> date_range = ("2020-01-01", "2021-12-31")
+        >>> save_path = create_synthetic_stock_dataset(
+        ...     training_dir,
+        ...     regime,
+        ...     date_range,
+        ...     num_synthetic=100
+        ... )
+        >>> print(save_path)  # data/stock_data/synthetic-bull_market-size_500.csv
+    """
+    from . import scenario_generation  # Lazy import
+
+    if num_synthetic <= 0:
+        raise ValueError("Please provide a valid integer for num_synthetic!")
+
+    synthetic_data = scenario_generation.generate_synthetic_stock_data(
+        dataset_directory=training_directory,
+        num_synthetic=num_synthetic,
+        fit_range=regime_range,
+        generate_range=regime_range,
+    )
+    dataset_size = len(synthetic_data.columns)
+
+    save_name = "synthetic-" + regime_name + f"-size_{dataset_size}.csv"
+    save_path = os.path.join(os.path.dirname(training_directory), save_name)
+    synthetic_data.to_csv(save_path)
+
+    return save_path
+
+
+def optimize_market_regimes(
+    input_file_name: str,
+    returns_compute_settings: ReturnsComputeSettings,
+    all_regimes: dict,
+    params: Union[CvarParameters, MeanVarianceParameters],
+    solver_settings_list: list[dict],
+    scenario_generation_settings: ScenarioGenerationSettings = None,
+    results_csv_file_name: str = None,
+    num_synthetic: int = 0,
+    print_results: bool = True,
+):
+    """
+    Compare optimization performance across different regimes and solvers.
+
+    Automatically detects whether to use CVaR or Mean-Variance optimization
+    based on the type of parameters passed.
+
+    Parameters
+    ----------
+    input_file_name : str
+        Path to input data file.
+    returns_compute_settings : ReturnsComputeSettings
+        Configuration for computing returns from price data.
+    all_regimes : dict
+        Dictionary of regimes to test with format {'regime_name': regime_range}.
+    params : CvarParameters or MeanVarianceParameters
+        Optimization parameters. The type determines which optimizer to use:
+        - CvarParameters: Uses CVaR optimization (requires scenario_generation_settings)
+        - MeanVarianceParameters: Uses Mean-Variance optimization
+    solver_settings_list : list[dict]
+        List of solver configurations to test.
+    scenario_generation_settings : ScenarioGenerationSettings, optional
+        Configuration for generating return scenarios. Required when using
+        CvarParameters, ignored for MeanVarianceParameters.
+    results_csv_file_name : str, optional
+        CSV filename to save results.
+    num_synthetic : int, optional
+        Number of synthetic data copies to generate (0 = none).
+        Only applicable for CVaR optimization.
+    print_results : bool, optional
+        Whether to print optimization results.
+
+    Returns
+    -------
+    pd.DataFrame
+        Results dataframe with solver performance metrics per regime.
+
+    Raises
+    ------
+    ValueError
+        If CvarParameters is passed without scenario_generation_settings.
+        If params is neither CvarParameters nor MeanVarianceParameters.
+    """
+    # Determine optimization type and risk measure based on params type
+    if isinstance(params, CvarParameters):
+        if scenario_generation_settings is None:
+            raise ValueError(
+                "scenario_generation_settings is required when using Mean-CVaR optimization"
+            )
+        risk_measure = "CVaR"
+        from . import cvar_optimizer  # Lazy import
+        from . import cvar_utils  # For generate_cvar_data
+    elif isinstance(params, MeanVarianceParameters):
+        risk_measure = "variance"
+        from . import mean_variance_optimizer  # Lazy import
+    else:
+        raise ValueError(
+            f"params must be either CvarParameters or MeanVarianceParameters, "
+            f"got {type(params).__name__}"
+        )
+
+    if len(solver_settings_list) == 0:
+        raise ValueError("Please provide at least one solver settings!")
+
+    # Helper function to extract solver name from settings
+    def get_solver_name(settings):
+        """Extract solver name from solver settings dict."""
+        if "solver" in settings:
+            solver_obj = settings["solver"]
+            return str(solver_obj).replace("cp.", "").replace("solvers.", "")
+        else:
+            raise ValueError(f"Please provide a solver name in the format 'solver': <solver_name>")
+
+    # Build column names dynamically based on solvers
+    columns = ["regime"]
+    solver_names = []
+    for settings in solver_settings_list:
+        solver_name = get_solver_name(settings)
+        solver_names.append(solver_name)
+        columns.extend(
+            [
+                f"{solver_name}-obj",
+                f"{solver_name}-solve_time",
+                f"{solver_name}-return",
+                f"{solver_name}-{risk_measure}",
+                f"{solver_name}-optimal_portfolio",
+            ]
+        )
+
+    result_rows = []
+
+    for regime_name, regime_range in all_regimes.items():
+        print("=" * 70)
+        print(f"Processing Regime: {regime_name}")
+        print("=" * 70)
+
+        # Handle synthetic data generation (CVaR only)
+        if risk_measure == "CVaR" and num_synthetic > 0:
+            input_data_directory = create_synthetic_stock_dataset(
+                input_file_name, regime_name, regime_range, num_synthetic
+            )
+        else:
+            input_data_directory = input_file_name
+
+        # Create returns_dict for the current regime
+        curr_regime = {"name": regime_name, "range": regime_range}
+        returns_dict = calculate_returns(
+            input_data_directory, curr_regime, returns_compute_settings
+        )
+
+        # Generate CVaR scenario data if needed
+        if risk_measure == "CVaR":
+            returns_dict = cvar_utils.generate_cvar_data(
+                returns_dict, scenario_generation_settings
+            )
+
+        # Initialize result row for this regime
+        result_row = {"regime": regime_name}
+
+        # Solve with each solver
+        for idx, solver_settings in enumerate(solver_settings_list):
+            solver_name = solver_names[idx]
+            print(f"\n--- Testing Solver: {solver_name} ---")
+
+            # Set up optimization problem based on risk measure
+            if risk_measure == "CVaR":
+                problem = cvar_optimizer.CVaR(
+                    returns_dict=returns_dict, cvar_params=params
+                )
+            else:
+                problem = mean_variance_optimizer.MeanVariance(
+                    returns_dict=returns_dict, mean_variance_params=params
+                )
+
+            # Solve optimization problem
+            try:
+                result, portfolio = problem.solve_optimization_problem(
+                    solver_settings, print_results=print_results
+                )
+
+                # Store results with solver-specific column names
+                result_row[f"{solver_name}-obj"] = result["obj"]
+                result_row[f"{solver_name}-solve_time"] = result["solve time"]
+                result_row[f"{solver_name}-return"] = result["return"]
+                result_row[f"{solver_name}-{risk_measure}"] = result.get(
+                    risk_measure, result.get(risk_measure.lower(), None)
+                )
+                result_row[f"{solver_name}-optimal_portfolio"] = portfolio.print_clean(
+                    verbose=False
+                )
+
+                print(
+                    f"  ✓ {solver_name} - Objective: {result['obj']:.6f}, "
+                    f"Time: {result['solve time']:.4f}s"
+                    f"--------------------------------"
+                )
+
+            except Exception as e:
+                print(f"  ✗ {solver_name} failed: {str(e)}")
+                result_row[f"{solver_name}-obj"] = None
+                result_row[f"{solver_name}-solve_time"] = None
+                result_row[f"{solver_name}-return"] = None
+                result_row[f"{solver_name}-{risk_measure}"] = None
+                result_row[f"{solver_name}-optimal_portfolio"] = None
+
+        result_rows.append(result_row)
+
+    # Create DataFrame from collected rows
+    result_dataframe = pd.DataFrame(result_rows, columns=columns)
+
+    print("\n" + "=" * 70)
+    print("Optimization Complete!")
+    print("=" * 70)
+    print("\n")
+
+    if results_csv_file_name:
+        result_dataframe.to_csv(results_csv_file_name, index=False)
+        print(f"Results saved to: {results_csv_file_name}")
+
+    return result_dataframe
