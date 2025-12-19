@@ -120,3 +120,24 @@ class BaseOptimizer:
             raise ValueError("Invalid weight constraints")
 
         return updated_weight_constraints
+
+    def _print_cuopt_timing(self, timing_dict):
+        """Print detailed timing information for cuOpt problem setup loops.
+
+        Parameters
+        ----------
+        timing_dict : dict
+            Dictionary containing timing information for each setup phase.
+        """
+        print("\ncuOpt SETUP TIMING BREAKDOWN")
+        print(f"{'-' * 40}")
+        total_time = sum(timing_dict.values())
+        for phase, time_taken in timing_dict.items():
+            percentage = (time_taken / total_time * 100) if total_time > 0 else 0
+            print(
+                f"{phase.replace('_', ' ').title():<25}: {time_taken:.6f}s "
+                f"({percentage:.1f}%)"
+            )
+        print(f"{'-' * 40}")
+        print(f"{'Total Setup Time':<25}: {total_time:.6f}s (100.0%)")
+        print()
