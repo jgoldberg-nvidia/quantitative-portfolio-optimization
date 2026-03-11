@@ -1661,25 +1661,15 @@ def main():
         with tab_bench:
             st.markdown("#### Benchmark Results")
             st.markdown(
-                "The table below shows representative solver performance on "
-                "standard datasets. GPU acceleration delivers significant "
-                "speed-ups as problem size grows."
+                "cuOpt on NVIDIA B200 vs open-source CPU solvers — "
+                "average solve time across 7 optimization regimes with "
+                "397 assets (log scale)."
             )
-            bench_data = {
-                "Dataset": ["100 assets", "100 assets", "500 assets", "500 assets"],
-                "Solver": ["GPU", "CPU", "GPU", "CPU"],
-                "Scenarios": ["10 000", "10 000", "10 000", "10 000"],
-                "Avg Solve (s)": ["0.03", "0.12", "0.08", "1.45"],
-                "Speedup": ["—", "—", "—", "—"],
-            }
-            bench_df = pd.DataFrame(bench_data)
-            bench_df.loc[0, "Speedup"] = f"{0.12/0.03:.1f}x"
-            bench_df.loc[1, "Speedup"] = "baseline"
-            bench_df.loc[2, "Speedup"] = f"{1.45/0.08:.1f}x"
-            bench_df.loc[3, "Speedup"] = "baseline"
-            st.dataframe(bench_df, hide_index=True, width="stretch")
+            bench_img = script_dir / "diagrams" / "dark_b200_cuopt_vs_opensource (1).png"
+            if bench_img.exists():
+                st.image(str(bench_img), width="stretch")
             st.caption(
-                "Timings are illustrative and depend on hardware. "
+                "GPU speedups grow with problem size: up to 232x at 50k scenarios. "
                 "Run your own comparison using the app."
             )
 
