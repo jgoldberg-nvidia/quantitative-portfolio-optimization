@@ -1,100 +1,69 @@
-# cuFOLIO Demo - Streamlit Applications
+# cuFOLIO Demo — Streamlit Applications
 
-Interactive web applications for portfolio optimization and risk management using Mean-CVaR (Conditional Value-at-Risk) optimization.
+Interactive web applications for GPU-accelerated portfolio optimization using Mean-CVaR and Mean-Variance models.
 
-## 📱 Applications
+## Applications
 
-### 1. **CVaR Portfolio Optimizer** (`cvar_streamlit_app.py`)
+### 1. Portfolio Optimizer (`cvar_streamlit_app.py`)
 Single-period portfolio optimization with interactive parameter tuning.
 
-**Features:**
+- **Mean-CVaR** or **Mean-Variance** optimization (selectable)
 - Real-time portfolio allocation visualization
-- Comprehensive constraint settings (weight bounds, leverage, cardinality)
-- GPU (cuOpt) and CPU (HiGHS) solver support
-- Detailed optimization metrics and performance statistics
+- Constraint settings: weight bounds, leverage, cardinality, cash reserves
+- Side-by-side GPU (cuOpt) vs CPU solver comparison
+- Optional backtesting with historical/KDE/Gaussian methods
 
-### 2. **cuFOLIO Efficient Frontier** (`efficient_frontier_streamlit_app.py`)
+### 2. Efficient Frontier (`efficient_frontier_streamlit_app.py`)
 Multi-portfolio efficient frontier generation with progressive GPU vs CPU comparison.
 
-**Features:**
-- Side-by-side GPU vs CPU performance comparison
-- Progressive frontier construction with real-time updates
-- Key portfolio identification (Min Variance, Max Sharpe, Max Return)
-- Interactive risk-return visualization
+- Side-by-side GPU vs CPU performance racing
+- Progressive frontier construction with real-time plot updates
+- Special portfolio identification (Min Variance, Max Sharpe, Max Return)
+- Optional discretized portfolio overlay
 
-### 3. **cuFOLIO Rebalancing Strategies** (`rebalancing_streamlit_app.py`)
+### 3. Rebalancing Strategies (`rebalancing_streamlit_app.py`)
 Dynamic portfolio rebalancing simulation with multiple trigger strategies.
 
-**Features:**
-- Multiple rebalancing triggers (percentage change, drift, drawdown)
-- Progressive backtesting with real-time performance tracking
-- GPU vs CPU solver comparison
-- Optional constraints (turnover, cardinality, hard CVaR limits)
+- Rebalancing triggers: loss threshold, drift from target, peak-to-trough decline, buy & hold
+- Progressive backtesting with real-time cumulative return plots
+- GPU vs CPU solver comparison with KDE timing breakdown
+- Advanced mode for technical parameters (windows, transaction costs, turnover)
+- Masked dataset and solver names for conference presentations
 
-## 🚀 Quick Start
+## Quick Start
 
-### Installation
 ```bash
-# Install dependencies
-pip install -r requirements_streamlit.txt
+# From the repository root:
+pip install -e ".[demo]"
 
-# Ensure CVaR source code is accessible
-# - CVaR source files should be in ../src/
-# - Data files should be in ../../data/stock_data/
+# Portfolio optimizer
+streamlit run demo/cvar_streamlit_app.py
+
+# Efficient frontier
+streamlit run demo/efficient_frontier_streamlit_app.py
+
+# Rebalancing strategies
+streamlit run demo/rebalancing_streamlit_app.py
 ```
 
-### Running the Apps
+For GPU acceleration, install with CUDA extras:
+
 ```bash
-# Single-period optimization
-streamlit run cvar_streamlit_app.py
-
-# Efficient frontier generation
-streamlit run efficient_frontier_streamlit_app.py
-
-# Dynamic rebalancing strategies
-streamlit run rebalancing_streamlit_app.py
+pip install -e ".[demo,cuda12]"   # CUDA 12
+pip install -e ".[demo,cuda13]"   # CUDA 13
 ```
 
-## 🔧 Common Parameters
+## Requirements
 
-### Dataset Configuration
-- **Dataset**: Stock datasets (sp500, baby_dataset, etc.)
-- **Return Type**: LOG or SIMPLE returns
-- **Date Range**: Historical period for analysis
-- **Device**: GPU or CPU computation
-
-### CVaR Parameters
-- **Risk Aversion**: Higher values prefer lower risk
-- **Confidence Level**: CVaR confidence (e.g., 95%)
-- **Scenarios**: Number of return scenarios
-
-### Portfolio Constraints
-- **Weight Bounds**: Min/max allocation per asset
-- **Cash Bounds**: Cash holding limits
-- **Leverage Target**: Maximum portfolio leverage
-- **Cardinality**: Maximum number of assets (optional)
-
-## 🎯 Use Cases
-
-**Single Portfolio Optimization**: Use CVaR Portfolio Optimizer for one-time portfolio construction with specific constraints.
-
-**Risk-Return Analysis**: Use Efficient Frontier app to understand the risk-return trade-off across multiple portfolios.
-
-**Dynamic Strategies**: Use Rebalancing Strategies app to simulate adaptive portfolio management over time.
-
-## 📋 Requirements
-
-- Python 3.8+
+- Python 3.10+
 - Streamlit 1.28+
-- CVXPY with HiGHS solver
+- CVXPY with supported solver (CLARABEL, HiGHS, etc.)
 - Optional: NVIDIA GPU + CUDA for cuOpt acceleration
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-**Import Errors**: Ensure CVaR `src/` folder is accessible and dependencies installed.
+**Import Errors**: Run `pip install -e .` from the repository root to register the `cufolio` package.
 
-**Data Issues**: Verify data files exist in `../../data/stock_data/`.
+**Dataset Not Found**: Ensure CSV files exist in `data/stock_data/`.
 
-**GPU Solver**: Check NVIDIA GPU and CUDA installation for cuOpt support.
-
-**Performance**: Use fewer scenarios or CPU solver for faster computation on limited hardware.
+**GPU Solver Unavailable**: The apps fall back to CPU-only mode automatically. Install `cuopt` for GPU support.
