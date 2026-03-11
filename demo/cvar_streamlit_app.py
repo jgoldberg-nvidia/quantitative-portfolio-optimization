@@ -1269,7 +1269,7 @@ def main():
         # Landing page
         script_dir = Path(__file__).parent
         cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
-        arch_path = script_dir / "diagrams" / "arch_diagram.png"
+        arch_path = script_dir / "diagrams" / "arch_diagram.svg"
 
         if cover_path.exists():
             st.image(str(cover_path), width="stretch")

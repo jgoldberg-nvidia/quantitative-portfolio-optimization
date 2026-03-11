@@ -1547,77 +1547,106 @@ def main():
             st.image(str(cover_path), width="stretch")
 
         st.markdown(
-            """
-### Dynamic Portfolio Rebalancing
-
-Simulate **rebalancing strategies** that re-optimize your portfolio
-when market conditions change — then watch GPU and CPU solvers race
-through the backtest in real time.
-
-Choose a trigger in the sidebar, set your constraints, and click
-**Run Rebalancing**.
-"""
+            "Simulate **rebalancing strategies** that re-optimize your portfolio "
+            "when market conditions change — then watch GPU and CPU solvers race "
+            "through the backtest in real time."
         )
 
-        # GIF demo (use HTML to ensure animation plays)
-        if gif_path.exists():
-            st.markdown("#### GPU vs CPU — Live Demo")
-            import base64
-            gif_bytes = gif_path.read_bytes()
-            gif_b64 = base64.b64encode(gif_bytes).decode()
+        tab_overview, tab_arch, tab_bench = st.tabs(
+            ["📊 Overview", "🏗️ Architecture", "📈 Benchmarks"]
+        )
+
+        with tab_overview:
+            # GIF demo
+            if gif_path.exists():
+                st.markdown("#### GPU vs CPU — Live Demo")
+                import base64
+                gif_bytes = gif_path.read_bytes()
+                gif_b64 = base64.b64encode(gif_bytes).decode()
+                st.markdown(
+                    f'<img src="data:image/gif;base64,{gif_b64}" style="width:100%;">',
+                    unsafe_allow_html=True,
+                )
+
+            # Dataset summary and price chart
+            st.markdown("#### Selected Dataset")
+            dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+            if dataset_path.exists():
+                try:
+                    df = pd.read_csv(dataset_path, index_col=0, parse_dates=True)
+                    tickers = list(df.columns)
+
+                    mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
+                    df_filtered = df.loc[mask]
+                    if df_filtered.empty:
+                        df_filtered = df
+
+                    col_s1, col_s2, col_s3 = st.columns(3)
+                    with col_s1:
+                        st.metric("Assets", len(tickers))
+                    with col_s2:
+                        st.metric("From", f"{df_filtered.index.min().strftime('%Y-%m-%d')}")
+                    with col_s3:
+                        st.metric("To", f"{df_filtered.index.max().strftime('%Y-%m-%d')}")
+
+                    fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
+                    normalised = df_filtered.div(df_filtered.iloc[0])
+                    for col in normalised.columns:
+                        ax.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
+                    ax.set_title(
+                        f"{_dataset_labels.get(dataset_name, 'Dataset')} — Normalised Closing Prices",
+                        fontsize=14, fontweight="bold",
+                    )
+                    ax.set_ylabel("Price (normalised to 1)")
+                    ax.set_xlabel("")
+                    ax.grid(True, alpha=0.25)
+                    ax.spines["top"].set_visible(False)
+                    ax.spines["right"].set_visible(False)
+                    fig.tight_layout()
+                    st.pyplot(fig)
+                    plt.close(fig)
+                except Exception as e:
+                    st.warning(f"Could not load dataset preview: {e}")
+            else:
+                st.info(f"**{_dataset_labels.get(dataset_name, 'Dataset')}** not found on disk.")
+
+        with tab_arch:
+            if arch_path.exists():
+                st.image(str(arch_path), width="stretch")
+            else:
+                st.info("Architecture diagram not found.")
             st.markdown(
-                f'<img src="data:image/gif;base64,{gif_b64}" style="width:100%;">',
-                unsafe_allow_html=True,
+                "Market data flows through **returns forecasting** and "
+                "**scenario generation** into the **CVaR optimizer**, which "
+                "produces an optimal allocation. The strategy is then "
+                "**backtested** period-by-period, triggering re-optimization "
+                "when conditions are breached."
             )
 
-        # Architecture
-        st.markdown("---")
-        st.markdown("#### Architecture")
-        if arch_path.exists():
-            st.image(str(arch_path), width="stretch")
-
-        # Dataset summary and price chart
-        st.markdown("---")
-        st.markdown("#### Selected Dataset")
-        dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
-        if dataset_path.exists():
-            try:
-                df = pd.read_csv(dataset_path, index_col=0, parse_dates=True)
-                tickers = list(df.columns)
-
-                mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
-                df_filtered = df.loc[mask]
-                if df_filtered.empty:
-                    df_filtered = df
-
-                col_s1, col_s2, col_s3 = st.columns(3)
-                with col_s1:
-                    st.metric("Assets", len(tickers))
-                with col_s2:
-                    st.metric("From", f"{df_filtered.index.min().strftime('%Y-%m-%d')}")
-                with col_s3:
-                    st.metric("To", f"{df_filtered.index.max().strftime('%Y-%m-%d')}")
-
-                fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
-                normalised = df_filtered.div(df_filtered.iloc[0])
-                for col in normalised.columns:
-                    ax.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
-                ax.set_title(
-                    f"{_dataset_labels.get(dataset_name, 'Dataset')} — Normalised Closing Prices",
-                    fontsize=14, fontweight="bold",
-                )
-                ax.set_ylabel("Price (normalised to 1)")
-                ax.set_xlabel("")
-                ax.grid(True, alpha=0.25)
-                ax.spines["top"].set_visible(False)
-                ax.spines["right"].set_visible(False)
-                fig.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
-            except Exception as e:
-                st.warning(f"Could not load dataset preview: {e}")
-        else:
-            st.info(f"**{_dataset_labels.get(dataset_name, 'Dataset')}** not found on disk.")
+        with tab_bench:
+            st.markdown("#### Benchmark Results")
+            st.markdown(
+                "The table below shows representative solver performance on "
+                "standard datasets. GPU acceleration delivers significant "
+                "speed-ups as problem size grows."
+            )
+            bench_data = {
+                "Dataset": ["100 assets", "100 assets", "500 assets", "500 assets"],
+                "Solver": ["GPU", "CPU", "GPU", "CPU"],
+                "Scenarios": ["10 000", "10 000", "10 000", "10 000"],
+                "Avg Solve (s)": ["0.03", "0.12", "0.08", "1.45"],
+                "Speedup": ["—", "—", "—", "—"],
+            }
+            bench_df = pd.DataFrame(bench_data)
+            bench_df.loc[0, "Speedup"] = f"{0.12/0.03:.1f}x"
+            bench_df.loc[1, "Speedup"] = "baseline"
+            bench_df.loc[2, "Speedup"] = f"{1.45/0.08:.1f}x"
+            bench_df.loc[3, "Speedup"] = "baseline"
+            st.dataframe(bench_df, hide_index=True, width="stretch")
+            st.caption(
+                "Timings are illustrative and depend on hardware. "
+                "Run your own comparison using the app."
+            )
 
         st.info(
             "👈 **Configure parameters in the sidebar and click "
