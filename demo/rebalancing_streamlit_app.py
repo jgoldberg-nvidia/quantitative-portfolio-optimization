@@ -109,7 +109,7 @@ st.markdown(
         margin-bottom: 1rem;
     }
     .metric-container {
-        background-color: #f0f2f6;
+        background-color: transparent;
         padding: 1rem;
         border-radius: 0.5rem;
         margin: 0.5rem 0;
@@ -1610,12 +1610,6 @@ def main():
         f'<div class="main-header">cuFOLIO - Backtesting Rebalance Strategies</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        '<p style="text-align:center; font-size:1.1rem; color:inherit; opacity:0.85;">'
-        "GPU-accelerated portfolio rebalancing with side-by-side solver comparison"
-        "</p>",
-        unsafe_allow_html=True,
-    )
 
     if not IMPORTS_OK:
         st.error(f"❌ Import Error: {IMPORT_ERROR}")
@@ -1872,9 +1866,142 @@ def main():
             width="stretch",
         )
 
-    # Main content
+    # Tabs — always visible
+    cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
+    arch_path = script_dir / "diagrams" / "arch_diagram.svg"
+    bench_img = script_dir / "diagrams" / "dark_b200_cuopt_vs_opensource (1).png"
+    gif_path = script_dir / "diagrams" / "rebalancing_gpu_vs_cpu.gif"
+    qr_path = script_dir / "diagrams" / "nvidia_qr_gtc_session_white_center.png"
+
+    tab_overview, tab_data, tab_demo, tab_arch, tab_bench, tab_refs = st.tabs(
+        ["📊 Overview", "📁 Dataset", "🚀 Live Demo", "🏗️ Architecture", "📈 Benchmarks", "📚 References"]
+    )
+
+    with tab_overview:
+        st.markdown(
+            "Simulate **rebalancing strategies** that re-optimize your portfolio "
+            "when market conditions change — then watch GPU and CPU solvers race "
+            "through the backtest in real time."
+        )
+        if gif_path.exists():
+            st.markdown("#### Unlocking Real-Time Backtesting with GPU")
+            import base64
+            gif_bytes = gif_path.read_bytes()
+            gif_b64 = base64.b64encode(gif_bytes).decode()
+            st.markdown(
+                f'<img src="data:image/gif;base64,{gif_b64}" style="width:100%;">',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Using the cuOpt GPU solver (left), you can test rebalancing "
+                "strategies much faster than using a CPU solver (right) — shown at 4x speed."
+            )
+
+        st.markdown(
+            "A once-optimal portfolio drifts as markets evolve, so "
+            "trigger-based rebalancing must re-optimize exposures repeatedly. "
+            "Because portfolio optimization is a **repeated core task** — not a "
+            "one-time effort — the speedup cuOpt delivers on a single solve is "
+            "**magnified across hundreds of iterations**. More sophisticated "
+            "strategies with additional hyperparameters demand even more "
+            "iterations, making GPU acceleration essential: the cuFOLIO pipeline "
+            "completes in **minutes instead of hours**."
+        )
+        st.caption(
+            "These example strategies highlight GPU acceleration and are "
+            "not optimized for deployment."
+        )
+
+    with tab_data:
+        dataset_path_preview = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+        if dataset_path_preview.exists():
+            try:
+                df_preview = pd.read_csv(dataset_path_preview, index_col=0, parse_dates=True)
+                mask = (df_preview.index >= pd.Timestamp(start_date)) & (df_preview.index <= pd.Timestamp(end_date))
+                df_filtered = df_preview.loc[mask]
+                if df_filtered.empty:
+                    df_filtered = df_preview
+
+                col_s1, col_s2, col_s3 = st.columns(3)
+                with col_s1:
+                    st.metric("Assets", len(df_preview.columns))
+                with col_s2:
+                    st.metric("From", df_filtered.index.min().strftime("%Y-%m-%d"))
+                with col_s3:
+                    st.metric("To", df_filtered.index.max().strftime("%Y-%m-%d"))
+
+                fig_preview, ax_preview = plt.subplots(figsize=(14, 5), dpi=150)
+                normalised = df_filtered.div(df_filtered.iloc[0])
+                for col in normalised.columns:
+                    ax_preview.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
+                ax_preview.set_title(
+                    f"{_dataset_labels.get(dataset_name, 'Dataset')} — Normalised Closing Prices",
+                    fontsize=14, fontweight="bold",
+                )
+                ax_preview.set_ylabel("Price (normalised to 1)")
+                ax_preview.set_xlabel("")
+                ax_preview.grid(True, alpha=0.25)
+                ax_preview.spines["top"].set_visible(False)
+                ax_preview.spines["right"].set_visible(False)
+                fig_preview.tight_layout()
+                st.pyplot(fig_preview)
+                plt.close(fig_preview)
+            except Exception as e:
+                st.warning(f"Could not load dataset preview: {e}")
+        else:
+            st.info("Dataset not found on disk.")
+
+    with tab_arch:
+        if arch_path.exists():
+            st.image(str(arch_path), width="stretch")
+        st.markdown(
+            "Market data flows through **returns forecasting** and "
+            "**scenario generation** into the **CVaR optimizer**, which "
+            "produces an optimal allocation. The strategy is then "
+            "**backtested** period-by-period, triggering re-optimization "
+            "when conditions are breached."
+        )
+
+    with tab_bench:
+        st.markdown("#### Benchmark Results")
+        st.markdown(
+            "cuOpt on NVIDIA B200 vs open-source CPU solvers — "
+            "average solve time across 7 optimization regimes with "
+            "397 assets (log scale)."
+        )
+        if bench_img.exists():
+            st.image(str(bench_img), width="stretch")
+        st.caption(
+            "GPU speedups grow with problem size: up to 232x at 50k scenarios."
+        )
+
+    with tab_refs:
+        st.markdown("#### GTC DLI Workshop")
+        if qr_path.exists():
+            col_qr1, col_qr2, col_qr3 = st.columns([1, 1, 1])
+            with col_qr2:
+                st.image(str(qr_path), width=300)
+                st.caption("Scan to access the GTC DLI workshop session")
+        st.markdown("---")
+        st.markdown(
+            """
+- R. T. Rockafellar and S. Uryasev, "Optimization of Conditional Value-at-Risk," *Journal of Risk*, 2000.
+- H. Markowitz, "Portfolio Selection," *The Journal of Finance*, 1952.
+- [NVIDIA cuOpt Documentation](https://docs.nvidia.com/cuopt/)
+- [cuFOLIO Repository](https://github.com/NVIDIA-AI-Blueprints/quantitative-portfolio-optimization)
+"""
+        )
+
+    with tab_demo:
+        if not run_btn:
+            st.info(
+                "👈 **Configure parameters in the sidebar and click "
+                "'Run Rebalancing' to start the live demo.**"
+            )
+
+    # Run optimization when button is pressed
     if run_btn:
-        # Validate
+      with tab_demo:
         dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
         if not dataset_path.exists():
             st.error(f"❌ Dataset not found: {dataset_path}")
@@ -1900,7 +2027,6 @@ def main():
             verbose=False,
         )
 
-        # Prepare parameters
         trading_range = (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
         cvar_params = CvarParameters(
             w_min=w_min,
@@ -1919,17 +2045,12 @@ def main():
         if strategy_key == "drift_from_optimal":
             criteria["norm"] = int(norm_choice or 2)
 
-        st.markdown(
-            '<div class="section-header"> GPU vs CPU Rebalancing </div>',
-            unsafe_allow_html=True,
-        )
         col_gpu, col_cpu = st.columns([1, 1], gap="medium")
         with col_gpu:
             st.markdown("### 🚀 GPU (cuOpt) Results")
             gpu_plot_container = st.empty()
             gpu_progress_placeholder = st.empty()
         with col_cpu:
-            # In blog mode, hide CPU solver name
             cpu_header = (
                 "### 🖥️ CPU Results"
                 if blog_mode
@@ -1939,7 +2060,6 @@ def main():
             cpu_plot_container = st.empty()
             cpu_progress_placeholder = st.empty()
 
-        # Run
         results = run_progressive_rebalancing(
             dataset_path=str(dataset_path),
             trading_range=trading_range,
@@ -2014,113 +2134,7 @@ def main():
                     hide_index=True,
                 )
 
-    else:
-        # Landing page
-        cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
-        arch_path = script_dir / "diagrams" / "arch_diagram.svg"
-        gif_path = script_dir / "diagrams" / "rebalancing_gpu_vs_cpu.gif"
-
-        if cover_path.exists():
-            st.image(str(cover_path), width="stretch")
-
-        st.markdown(
-            "Simulate **rebalancing strategies** that re-optimize your portfolio "
-            "when market conditions change — then watch GPU and CPU solvers race "
-            "through the backtest in real time."
-        )
-
-        tab_overview, tab_arch, tab_bench = st.tabs(
-            ["📊 Overview", "🏗️ Architecture", "📈 Benchmarks"]
-        )
-
-        with tab_overview:
-            # GIF demo
-            if gif_path.exists():
-                st.markdown("#### GPU vs CPU — Live Demo")
-                import base64
-                gif_bytes = gif_path.read_bytes()
-                gif_b64 = base64.b64encode(gif_bytes).decode()
-                st.markdown(
-                    f'<img src="data:image/gif;base64,{gif_b64}" style="width:100%;">',
-                    unsafe_allow_html=True,
-                )
-
-            # Dataset summary and price chart
-            st.markdown("#### Selected Dataset")
-            dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
-            if dataset_path.exists():
-                try:
-                    df = pd.read_csv(dataset_path, index_col=0, parse_dates=True)
-                    tickers = list(df.columns)
-
-                    mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
-                    df_filtered = df.loc[mask]
-                    if df_filtered.empty:
-                        df_filtered = df
-
-                    col_s1, col_s2, col_s3 = st.columns(3)
-                    with col_s1:
-                        st.metric("Assets", len(tickers))
-                    with col_s2:
-                        st.metric("From", f"{df_filtered.index.min().strftime('%Y-%m-%d')}")
-                    with col_s3:
-                        st.metric("To", f"{df_filtered.index.max().strftime('%Y-%m-%d')}")
-
-                    fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
-                    normalised = df_filtered.div(df_filtered.iloc[0])
-                    for col in normalised.columns:
-                        ax.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
-                    ax.set_title(
-                        f"{_dataset_labels.get(dataset_name, 'Dataset')} — Normalised Closing Prices",
-                        fontsize=14, fontweight="bold",
-                    )
-                    ax.set_ylabel("Price (normalised to 1)")
-                    ax.set_xlabel("")
-                    ax.grid(True, alpha=0.25)
-                    ax.spines["top"].set_visible(False)
-                    ax.spines["right"].set_visible(False)
-                    fig.tight_layout()
-                    st.pyplot(fig)
-                    plt.close(fig)
-                except Exception as e:
-                    st.warning(f"Could not load dataset preview: {e}")
-            else:
-                st.info(f"**{_dataset_labels.get(dataset_name, 'Dataset')}** not found on disk.")
-
-        with tab_arch:
-            if arch_path.exists():
-                st.image(str(arch_path), width="stretch")
-            else:
-                st.info("Architecture diagram not found.")
-            st.markdown(
-                "Market data flows through **returns forecasting** and "
-                "**scenario generation** into the **CVaR optimizer**, which "
-                "produces an optimal allocation. The strategy is then "
-                "**backtested** period-by-period, triggering re-optimization "
-                "when conditions are breached."
-            )
-
-        with tab_bench:
-            st.markdown("#### Benchmark Results")
-            st.markdown(
-                "cuOpt on NVIDIA B200 vs open-source CPU solvers — "
-                "average solve time across 7 optimization regimes with "
-                "397 assets (log scale)."
-            )
-            bench_img = script_dir / "diagrams" / "dark_b200_cuopt_vs_opensource (1).png"
-            if bench_img.exists():
-                st.image(str(bench_img), width="stretch")
-            st.caption(
-                "GPU speedups grow with problem size: up to 232x at 50k scenarios. "
-                "Run your own comparison using the app."
-            )
-
-        st.info(
-            "👈 **Configure parameters in the sidebar and click "
-            "'Run Rebalancing' to start.**"
-        )
-
-    # Add disclaimer at the bottom
+    # Disclaimer at the bottom
     st.markdown("---")
     st.caption(
         "⚠️ This tool is for educational and research purposes. Past performance does not guarantee future results."

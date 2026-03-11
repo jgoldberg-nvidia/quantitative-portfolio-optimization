@@ -60,8 +60,8 @@ st.markdown(
     """
 <style>
     .stMetric {
-        background-color: #f0f2f6;
-        border: 1px solid #e1e5e9;
+        background-color: transparent;
+        border: 1px solid rgba(128, 128, 128, 0.3);
         padding: 0.5rem;
         border-radius: 0.5rem;
         margin: 0.2rem 0;
@@ -910,9 +910,112 @@ def main():
             "🚀 Run Optimization", type="primary", width="stretch"
         )
 
+    # Tabs — always visible
+    script_dir = Path(__file__).parent
+    cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
+    arch_path = script_dir / "diagrams" / "arch_diagram.svg"
+    bench_img = script_dir / "diagrams" / "dark_b200_cuopt_vs_opensource (1).png"
+
+    tab_overview, tab_data, tab_demo, tab_arch, tab_bench, tab_refs = st.tabs(
+        ["📊 Overview", "📁 Dataset", "🚀 Live Demo", "🏗️ Architecture", "📈 Benchmarks", "📚 References"]
+    )
+
+    with tab_overview:
+        st.markdown(
+            "This tool finds optimal asset allocations that balance expected "
+            "returns against downside risk. Choose **Mean-CVaR** or "
+            "**Mean-Variance** in the sidebar, configure constraints, and "
+            "click **Run Optimization**."
+        )
+
+    with tab_arch:
+        if arch_path.exists():
+            st.image(str(arch_path), width="stretch")
+        st.markdown(
+            "Market data flows through **returns forecasting** and "
+            "**scenario generation** into the **optimizer**, which produces "
+            "an optimal allocation. The result is then **backtested** against "
+            "historical data to validate performance."
+        )
+
+    with tab_bench:
+        st.markdown("#### Benchmark Results")
+        st.markdown(
+            "cuOpt on NVIDIA B200 vs open-source CPU solvers — "
+            "average solve time across 7 optimization regimes with "
+            "397 assets (log scale)."
+        )
+        if bench_img.exists():
+            st.image(str(bench_img), width="stretch")
+        st.caption(
+            "GPU speedups grow with problem size: up to 232x at 50k scenarios."
+        )
+
+    with tab_data:
+        dataset_path_preview = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+        if dataset_path_preview.exists():
+            try:
+                df_preview = pd.read_csv(dataset_path_preview, index_col=0, parse_dates=True)
+                mask = (df_preview.index >= pd.Timestamp(start_date)) & (df_preview.index <= pd.Timestamp(end_date))
+                df_filtered = df_preview.loc[mask]
+                if df_filtered.empty:
+                    df_filtered = df_preview
+
+                col_s1, col_s2, col_s3 = st.columns(3)
+                with col_s1:
+                    st.metric("Assets", len(df_preview.columns))
+                with col_s2:
+                    st.metric("From", df_filtered.index.min().strftime("%Y-%m-%d"))
+                with col_s3:
+                    st.metric("To", df_filtered.index.max().strftime("%Y-%m-%d"))
+
+                fig_preview, ax_preview = plt.subplots(figsize=(14, 5), dpi=150)
+                normalised = df_filtered.div(df_filtered.iloc[0])
+                for col in normalised.columns:
+                    ax_preview.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
+                ax_preview.set_title("Normalised Closing Prices", fontsize=14, fontweight="bold")
+                ax_preview.set_ylabel("Price (normalised to 1)")
+                ax_preview.set_xlabel("")
+                ax_preview.grid(True, alpha=0.25)
+                ax_preview.spines["top"].set_visible(False)
+                ax_preview.spines["right"].set_visible(False)
+                fig_preview.tight_layout()
+                st.pyplot(fig_preview)
+                plt.close(fig_preview)
+            except Exception as e:
+                st.warning(f"Could not load dataset preview: {e}")
+        else:
+            st.info("Dataset not found on disk.")
+
+    with tab_demo:
+        if not optimize_button:
+            st.info(
+                "👈 **Configure parameters in the sidebar and click "
+                "'Run Optimization' to start the live demo.**"
+            )
+
+    with tab_refs:
+        st.markdown("#### GTC DLI Workshop")
+        qr_path = script_dir / "diagrams" / "nvidia_qr_gtc_session_white_center.png"
+        if qr_path.exists():
+            col_qr1, col_qr2, col_qr3 = st.columns([1, 1, 1])
+            with col_qr2:
+                st.image(str(qr_path), width=300)
+                st.caption("Scan to access the GTC DLI workshop session")
+
+        st.markdown("---")
+        st.markdown(
+            """
+- R. T. Rockafellar and S. Uryasev, "Optimization of Conditional Value-at-Risk," *Journal of Risk*, 2000.
+- H. Markowitz, "Portfolio Selection," *The Journal of Finance*, 1952.
+- [NVIDIA cuOpt Documentation](https://docs.nvidia.com/cuopt/)
+- [cuFOLIO Repository](https://github.com/NVIDIA-AI-Blueprints/quantitative-portfolio-optimization)
+"""
+        )
+
     # Run optimization when button is pressed
     if optimize_button:
-        # Main content area with GPU vs CPU comparison
+      with tab_demo:
         gpu_col, cpu_col = st.columns([1, 1])
 
         with gpu_col:
@@ -944,7 +1047,6 @@ def main():
             progress_bar = st.progress(0)
 
             try:
-                # Update progress
                 progress_bar.progress(10)
                 st.info(f"📊 Setting up {opt_method} parameters...")
 
@@ -1267,53 +1369,6 @@ def main():
                 st.text("Debug info:")
                 st.text(traceback.format_exc())
 
-    else:
-        # Landing page
-        script_dir = Path(__file__).parent
-        cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
-        arch_path = script_dir / "diagrams" / "arch_diagram.svg"
-
-        if cover_path.exists():
-            st.image(str(cover_path), width="stretch")
-
-        st.markdown(
-            """
-### Quantitative Portfolio Optimization
-
-Whether you are constructing a new portfolio or rebalancing an existing one,
-this tool helps you find optimal asset allocations that balance expected
-returns against downside risk.
-
-**Choose your optimization method** in the sidebar:
-
-- **Mean-CVaR** — controls tail risk by minimizing Conditional Value-at-Risk,
-  ideal when you need to guard against extreme market losses.
-- **Mean-Variance** — the classic Markowitz framework that minimizes portfolio
-  variance, well-suited for normally distributed return assumptions.
-
-Configure your dataset, date range, constraints, and risk parameters in the
-sidebar, then click **Run Optimization** to see results.
-"""
-        )
-
-        st.markdown("---")
-        st.markdown("### Architecture")
-        st.markdown(
-            """
-The pipeline flows from raw market data through returns forecasting and
-scenario generation to the optimizer, which produces an optimal allocation
-strategy. The strategy is then backtested against historical data to
-validate performance before deployment.
-"""
-        )
-
-        if arch_path.exists():
-            st.image(str(arch_path), width="stretch")
-
-        st.info(
-            "👈 **Configure parameters in the sidebar and click "
-            "'Run Optimization' to start.**"
-        )
 
 
 if __name__ == "__main__":
