@@ -124,6 +124,14 @@ st.markdown(
         background-color: rgba(118, 185, 0, 0.1) !important;
         border-left-color: #76b900 !important;
     }
+    /* Slider bar (track and thumb) only - does not change sidebar background */
+    div.stSlider div[data-baseweb="slider"] div[data-testid="stTickBar"] {
+        background: linear-gradient(to right, #76b900 0%, #76b900 100%) !important;
+    }
+    div.stSlider div[data-baseweb="slider"] div[role="slider"] {
+        background-color: #76b900 !important;
+        box-shadow: 0 0 0 0.2rem rgba(118, 185, 0, 0.25) !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -1123,13 +1131,7 @@ def main():
 
     # Header
     st.markdown(
-        f'<div class="main-header">cuFOLIO - Backtesting Rebalance Strategies</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<p style="text-align:center; font-size:1.1rem; color:inherit; opacity:0.85;">'
-        "GPU-accelerated portfolio rebalancing with side-by-side solver comparison"
-        "</p>",
+        f'<div class="main-header">cuFOLIO - GPU-accelerated portfolio Backtesting Rebalance Strategies</div>',
         unsafe_allow_html=True,
     )
 
@@ -1539,12 +1541,12 @@ def main():
 
     else:
         # Landing page
-        cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
+        # cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
         arch_path = script_dir / "diagrams" / "arch_diagram.svg"
         gif_path = script_dir / "diagrams" / "rebalancing_gpu_vs_cpu.gif"
 
-        if cover_path.exists():
-            st.image(str(cover_path), width="stretch")
+        # if cover_path.exists():
+        #     st.image(str(cover_path), width="stretch")
 
         st.markdown(
             "Simulate **rebalancing strategies** that re-optimize your portfolio "
@@ -1552,8 +1554,8 @@ def main():
             "through the backtest in real time."
         )
 
-        tab_overview, tab_arch, tab_bench = st.tabs(
-            ["📊 Overview", "🏗️ Architecture", "📈 Benchmarks"]
+        tab_overview, tab_arch, tab_bench, tab_data = st.tabs(
+            ["📊 Overview", "🏗️ Architecture", "📈 Benchmarks", "🔍 Data Exploration"]
         )
 
         with tab_overview:
@@ -1568,8 +1570,54 @@ def main():
                     unsafe_allow_html=True,
                 )
 
-            # Dataset summary and price chart
-            st.markdown("#### Selected Dataset")
+
+
+        with tab_arch:
+            if arch_path.exists():
+                st.image(str(arch_path), width="stretch")
+            else:
+                st.info("Architecture diagram not found.")
+            st.markdown(
+                "Market data flows through **returns forecasting** and "
+                "**scenario generation** into the **CVaR optimizer**, which "
+                "produces an optimal allocation. The strategy is then "
+                "**backtested** period-by-period, triggering re-optimization "
+                "when conditions are breached."
+            )
+
+        with tab_bench:
+            st.markdown("#### Benchmark Results")
+            st.markdown(
+                "The table below shows representative solver performance on "
+                "standard datasets. GPU acceleration delivers significant "
+                "speed-ups as problem size grows."
+            )
+            bench_data = {
+                "Dataset": ["100 assets", "100 assets", "500 assets", "500 assets"],
+                "Solver": ["GPU", "CPU", "GPU", "CPU"],
+                "Scenarios": ["10 000", "10 000", "10 000", "10 000"],
+                "Avg Solve (s)": ["0.03", "0.12", "0.08", "1.45"],
+                "Speedup": ["—", "—", "—", "—"],
+            }
+            bench_df = pd.DataFrame(bench_data)
+            bench_df.loc[0, "Speedup"] = f"{0.12/0.03:.1f}x"
+            bench_df.loc[1, "Speedup"] = "baseline"
+            bench_df.loc[2, "Speedup"] = f"{1.45/0.08:.1f}x"
+            bench_df.loc[3, "Speedup"] = "baseline"
+            st.dataframe(bench_df, hide_index=True, width="stretch")
+            st.caption(
+                "Timings are illustrative and depend on hardware. "
+                "Run your own comparison using the app."
+            )
+
+        with tab_data:
+            st.markdown("#### Data Exploration")
+            st.markdown(
+                "Explore summary statistics and correlations for the selected dataset "
+                "over the chosen date range."
+            )
+
+                        # Dataset summary and price chart
             dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
             if dataset_path.exists():
                 try:
@@ -1610,43 +1658,49 @@ def main():
             else:
                 st.info(f"**{_dataset_labels.get(dataset_name, 'Dataset')}** not found on disk.")
 
-        with tab_arch:
-            if arch_path.exists():
-                st.image(str(arch_path), width="stretch")
+            if dataset_path.exists():
+                try:
+                    df = pd.read_csv(dataset_path, index_col=0, parse_dates=True)
+                    tickers = list(df.columns)
+                    mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
+                    df_filtered = df.loc[mask]
+                    if df_filtered.empty:
+                        df_filtered = df
+                    returns = df_filtered.pct_change().dropna()
+                    corr_full = returns.corr()
+                    np.fill_diagonal(corr_full.values, np.nan)
+                    correlating_stock = corr_full.idxmax(axis=1)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**Returns — Summary (annualised)**")
+                        summary = returns.agg(["mean", "std"]).T
+                        summary["mean"] = summary["mean"] * 252
+                        summary["std"] = summary["std"] * (252 ** 0.5)
+                        summary["Correlating stock"] = correlating_stock
+                        summary = summary.reset_index().rename(columns={"index": "Stock"})
+                        summary = summary.rename(columns={"mean": "Ann. mean", "std": "Ann. vol"})
+                        summary = summary[["Stock", "Ann. mean", "Ann. vol", "Correlating stock"]]
+                        st.dataframe(summary.round(4), hide_index=True, use_container_width=True)
+                    with col2:
+                        st.markdown("**Correlation matrix (sample)**")
+                        sample_tickers = tickers[: min(15, len(tickers))]
+                        corr = returns[sample_tickers].corr()
+                        fig, ax = plt.subplots(figsize=(8, 6), dpi=120)
+                        im = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
+                        ax.set_xticks(range(len(sample_tickers)))
+                        ax.set_yticks(range(len(sample_tickers)))
+                        ax.set_xticklabels(sample_tickers, rotation=45, ha="right", fontsize=8)
+                        ax.set_yticklabels(sample_tickers, fontsize=8)
+                        plt.colorbar(im, ax=ax, label="Correlation")
+                        fig.tight_layout()
+                        st.pyplot(fig)
+                        plt.close(fig)
+                    if len(tickers) > 15:
+                        st.caption(f"Showing first 15 of {len(tickers)} assets. Full dataset in Overview.")
+                except Exception as e:
+                    st.warning(f"Could not load dataset for exploration: {e}")
             else:
-                st.info("Architecture diagram not found.")
-            st.markdown(
-                "Market data flows through **returns forecasting** and "
-                "**scenario generation** into the **CVaR optimizer**, which "
-                "produces an optimal allocation. The strategy is then "
-                "**backtested** period-by-period, triggering re-optimization "
-                "when conditions are breached."
-            )
-
-        with tab_bench:
-            st.markdown("#### Benchmark Results")
-            st.markdown(
-                "The table below shows representative solver performance on "
-                "standard datasets. GPU acceleration delivers significant "
-                "speed-ups as problem size grows."
-            )
-            bench_data = {
-                "Dataset": ["100 assets", "100 assets", "500 assets", "500 assets"],
-                "Solver": ["GPU", "CPU", "GPU", "CPU"],
-                "Scenarios": ["10 000", "10 000", "10 000", "10 000"],
-                "Avg Solve (s)": ["0.03", "0.12", "0.08", "1.45"],
-                "Speedup": ["—", "—", "—", "—"],
-            }
-            bench_df = pd.DataFrame(bench_data)
-            bench_df.loc[0, "Speedup"] = f"{0.12/0.03:.1f}x"
-            bench_df.loc[1, "Speedup"] = "baseline"
-            bench_df.loc[2, "Speedup"] = f"{1.45/0.08:.1f}x"
-            bench_df.loc[3, "Speedup"] = "baseline"
-            st.dataframe(bench_df, hide_index=True, width="stretch")
-            st.caption(
-                "Timings are illustrative and depend on hardware. "
-                "Run your own comparison using the app."
-            )
+                st.info(f"**{_dataset_labels.get(dataset_name, 'Dataset')}** not found on disk.")
 
         st.info(
             "👈 **Configure parameters in the sidebar and click "

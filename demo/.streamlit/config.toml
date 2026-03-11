@@ -1,0 +1,5 @@
+[theme]
+# Use dark mode (dark background, light text)
+base = "dark"
+# Primary accent color for interactive elements (buttons, links, sliders, etc.)
+primaryColor = "#76b900"
