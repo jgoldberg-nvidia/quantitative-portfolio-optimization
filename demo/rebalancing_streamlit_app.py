@@ -2124,7 +2124,7 @@ def main():
                 capture_output=True, text=True, timeout=5,
             )
             if _r.returncode == 0:
-                gpu_info = _r.stdout.strip()
+                gpu_info = _r.stdout.strip().splitlines()[0].split(",")[0].strip()
         except Exception:
             pass
         cpu_info = "N/A"
