@@ -56,6 +56,13 @@ from app_parameters import (
 
 warnings.filterwarnings("ignore")
 
+# Force 'spawn' globally before any CUDA library is loaded, so the
+# resource tracker and all child processes start clean.
+try:
+    mp.set_start_method("spawn")
+except RuntimeError:
+    pass  # Already set (e.g. on macOS 3.13+ where spawn is default)
+
 # Global lock for matplotlib operations to prevent thread conflicts
 _matplotlib_lock = threading.Lock()
 
@@ -1377,11 +1384,9 @@ def run_progressive_rebalancing(
     cpu_rcs_dict = returns_compute_settings.model_dump()
     cpu_sgs_dict = cpu_scenario_settings.model_dump()
 
-    # Use 'spawn' to avoid inheriting CUDA context (fork causes segfault)
-    ctx = mp.get_context("spawn")
-    cpu_mp_q = ctx.Queue()
+    cpu_mp_q = mp.Queue()
 
-    cpu_process = ctx.Process(
+    cpu_process = mp.Process(
         target=create_rebalancing_cpu_worker,
         args=(
             dataset_path,
@@ -1588,7 +1593,17 @@ def run_progressive_rebalancing(
 
     gpu_thread.join()
     cpu_process.join(timeout=300)
+    if cpu_process.is_alive():
+        cpu_process.terminate()
+        cpu_process.join(timeout=5)
     cpu_bridge.join(timeout=10)
+
+    # Clean up multiprocessing resources to prevent leaked semaphores
+    try:
+        cpu_mp_q.close()
+        cpu_mp_q.join_thread()
+    except Exception:
+        pass
 
     # Gather results
     out = {}
