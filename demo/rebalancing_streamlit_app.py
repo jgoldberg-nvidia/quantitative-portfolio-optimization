@@ -1607,7 +1607,7 @@ def main():
 
     # Header
     st.markdown(
-        f'<div class="main-header">cuFOLIO - Backtesting Rebalance Strategies</div>',
+        f'<div class="main-header">cuFOLIO - Unlocking Real-Time Backtesting</div>',
         unsafe_allow_html=True,
     )
 
@@ -1878,13 +1878,13 @@ def main():
     )
 
     with tab_overview:
+        st.markdown("### Backtest Rebalancing Strategies")
         st.markdown(
             "Simulate **rebalancing strategies** that re-optimize your portfolio "
             "when market conditions change — then watch GPU and CPU solvers race "
             "through the backtest in real time."
         )
         if gif_path.exists():
-            st.markdown("#### Unlocking Real-Time Backtesting with GPU")
             import base64
             gif_bytes = gif_path.read_bytes()
             gif_b64 = base64.b64encode(gif_bytes).decode()
@@ -1976,12 +1976,21 @@ def main():
         )
 
     with tab_refs:
-        st.markdown("#### GTC DLI Workshop")
-        if qr_path.exists():
-            col_qr1, col_qr2, col_qr3 = st.columns([1, 1, 1])
-            with col_qr2:
-                st.image(str(qr_path), width=300)
-                st.caption("Scan to access the GTC DLI workshop session")
+        qpo_qr = script_dir / "diagrams" / "QPO_Learn_QR.svg"
+        finance_qr = script_dir / "diagrams" / "finance_sessions.svg"
+
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown("#### GTC cuFOLIO Workshop")
+            if qpo_qr.exists():
+                st.image(str(qpo_qr), width=280)
+                st.caption("Scan to access the GTC cuFOLIO workshop")
+        with col_right:
+            st.markdown("#### More Finance Sessions")
+            if finance_qr.exists():
+                st.image(str(finance_qr), width=280)
+                st.caption("Scan for all GTC finance sessions")
+
         st.markdown("---")
         st.markdown(
             """
@@ -2002,6 +2011,24 @@ def main():
     # Run optimization when button is pressed
     if run_btn:
       with tab_demo:
+        # Display device info
+        import platform
+        gpu_info = "N/A"
+        try:
+            import subprocess as _sp
+            result = _sp.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                gpu_info = result.stdout.strip()
+        except Exception:
+            pass
+        cpu_info = platform.processor() or platform.machine()
+        col_dev1, col_dev2 = st.columns(2)
+        with col_dev1:
+            st.caption(f"🚀 **GPU:** {gpu_info}")
+        with col_dev2:
+            st.caption(f"🖥️ **CPU:** {cpu_info}")
+
         dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
         if not dataset_path.exists():
             st.error(f"❌ Dataset not found: {dataset_path}")

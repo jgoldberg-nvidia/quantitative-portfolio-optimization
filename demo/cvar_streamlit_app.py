@@ -995,13 +995,20 @@ def main():
             )
 
     with tab_refs:
-        st.markdown("#### GTC DLI Workshop")
-        qr_path = script_dir / "diagrams" / "nvidia_qr_gtc_session_white_center.png"
-        if qr_path.exists():
-            col_qr1, col_qr2, col_qr3 = st.columns([1, 1, 1])
-            with col_qr2:
-                st.image(str(qr_path), width=300)
-                st.caption("Scan to access the GTC DLI workshop session")
+        qpo_qr = script_dir / "diagrams" / "QPO_Learn_QR.svg"
+        finance_qr = script_dir / "diagrams" / "finance_sessions.svg"
+
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown("#### GTC cuFOLIO Workshop")
+            if qpo_qr.exists():
+                st.image(str(qpo_qr), width=280)
+                st.caption("Scan to access the GTC cuFOLIO workshop")
+        with col_right:
+            st.markdown("#### More Finance Sessions")
+            if finance_qr.exists():
+                st.image(str(finance_qr), width=280)
+                st.caption("Scan for all GTC finance sessions")
 
         st.markdown("---")
         st.markdown(
@@ -1016,6 +1023,24 @@ def main():
     # Run optimization when button is pressed
     if optimize_button:
       with tab_demo:
+        # Display device info
+        import platform
+        gpu_info = "N/A"
+        try:
+            import subprocess as _sp
+            result = _sp.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                gpu_info = result.stdout.strip()
+        except Exception:
+            pass
+        cpu_info = platform.processor() or platform.machine()
+        col_dev1, col_dev2 = st.columns(2)
+        with col_dev1:
+            st.caption(f"🚀 **GPU:** {gpu_info}")
+        with col_dev2:
+            st.caption(f"🖥️ **CPU:** {cpu_info}")
+
         gpu_col, cpu_col = st.columns([1, 1])
 
         with gpu_col:
