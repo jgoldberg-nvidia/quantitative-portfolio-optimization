@@ -267,7 +267,7 @@ def create_rebalancing_progressive(
             {
                 "solver": solver_name,
                 "status": "initializing",
-                "message": f"{solver_name}: Computing baseline portfolio...",
+                "message": f"{solver_name}: Computing baseline strategy...",
             }
         )
 
@@ -877,7 +877,7 @@ def create_rebalancing_cpu_worker(
         _solver_settings = {"solver": _resolve_cpu_solver(solver_key), "verbose": False}
 
         mp_queue.put({"status": "initializing", "solver": solver_name,
-                       "message": f"{solver_name}: Computing baseline portfolio..."})
+                       "message": f"{solver_name}: Computing baseline strategy..."})
 
         start_date, end_date = trading_range
 
@@ -2057,24 +2057,6 @@ def main():
     if run_btn:
       _inject_tab_switch(2)
       with tab_demo:
-        # Display device info
-        import platform
-        gpu_info = "N/A"
-        try:
-            import subprocess as _sp
-            result = _sp.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                gpu_info = result.stdout.strip()
-        except Exception:
-            pass
-        cpu_info = platform.processor() or platform.machine()
-        col_dev1, col_dev2 = st.columns(2)
-        with col_dev1:
-            st.caption(f"🚀 **GPU:** {gpu_info}")
-        with col_dev2:
-            st.caption(f"🖥️ **CPU:** {cpu_info}")
-
         dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
         if not dataset_path.exists():
             st.error(f"❌ Dataset not found: {dataset_path}")
@@ -2133,6 +2115,44 @@ def main():
             cpu_plot_container = st.empty()
             cpu_progress_placeholder = st.empty()
 
+        # Device info below the graphs
+        import subprocess as _sp
+        gpu_info = "N/A"
+        try:
+            _r = _sp.run(
+                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if _r.returncode == 0:
+                gpu_info = _r.stdout.strip()
+        except Exception:
+            pass
+        cpu_info = "N/A"
+        try:
+            _r = _sp.run(["lscpu"], capture_output=True, text=True, timeout=5)
+            if _r.returncode == 0:
+                for line in _r.stdout.splitlines():
+                    if "Model name" in line:
+                        cpu_info = line.split(":", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+        if cpu_info == "N/A":
+            try:
+                _r = _sp.run(
+                    ["sysctl", "-n", "machdep.cpu.brand_string"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if _r.returncode == 0:
+                    cpu_info = _r.stdout.strip()
+            except Exception:
+                pass
+        col_dev1, col_dev2 = st.columns(2)
+        with col_dev1:
+            st.caption(f"🚀 **GPU:** {gpu_info}")
+        with col_dev2:
+            st.caption(f"🖥️ **CPU:** {cpu_info}")
+
         results = run_progressive_rebalancing(
             dataset_path=str(dataset_path),
             trading_range=trading_range,
@@ -2160,8 +2180,7 @@ def main():
         g = results.get("GPU", {})
         c = results.get("CPU", {})
 
-        # Display results in 3-column layout with speedup in the middle (equal spacing)
-        col1, col2 = st.columns([1, 1])
+        col1, col2, col3 = st.columns([1, 1, 1])
 
         with col1:
             if g.get("success") and c.get("success"):
@@ -2173,13 +2192,14 @@ def main():
             else:
                 st.error("Speedup calculation failed")
 
-
         with col2:
             if g.get("success"):
                 st.metric("⚡ GPU Solve Time", f"{g.get('total_solve_time', 0.0):.3f}s")
                 st.metric("🔬 GPU KDE Time", f"{g.get('total_kde_time', 0.0):.3f}s")
             else:
                 st.error("GPU failed")
+
+        with col3:
             if c.get("success"):
                 st.metric("⚡ CPU Solve Time", f"{c.get('total_solve_time', 0.0):.3f}s")
                 st.metric("🔬 CPU KDE Time", f"{c.get('total_kde_time', 0.0):.3f}s")
