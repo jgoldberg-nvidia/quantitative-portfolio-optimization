@@ -1580,8 +1580,8 @@ def run_progressive_rebalancing(
         plt.close(gpu_empty_fig)
         plt.close(cpu_empty_fig)
 
-    gpu_plot_container.image(gpu_empty_img, use_container_width=True)
-    cpu_plot_container.image(cpu_empty_img, use_container_width=True)
+    gpu_plot_container.image(gpu_empty_img, width="stretch")
+    cpu_plot_container.image(cpu_empty_img, width="stretch")
 
     # Create synchronization event to ensure simultaneous start
     start_event = threading.Event()
@@ -1735,14 +1735,14 @@ def run_progressive_rebalancing(
                     if fig is not None:
                         with _matplotlib_lock:
                             _img = _fig_to_png_bytes(fig)
-                        gpu_plot_container.image(_img, use_container_width=True)
+                        gpu_plot_container.image(_img, width="stretch")
                         gpu_processed_plot = True
                 elif status == "plot_ready":
                     fig = upd.get("figure")
                     if fig is not None:
                         with _matplotlib_lock:
                             _img = _fig_to_png_bytes(fig)
-                        gpu_plot_container.image(_img, use_container_width=True)
+                        gpu_plot_container.image(_img, width="stretch")
                     with gpu_progress_placeholder.container():
                         st.success(upd.get("message", ""))
                 elif status == "ready":
@@ -1766,7 +1766,7 @@ def run_progressive_rebalancing(
                     if fig is not None:
                         with _matplotlib_lock:
                             _img = _fig_to_png_bytes(fig)
-                        gpu_plot_container.image(_img, use_container_width=True)
+                        gpu_plot_container.image(_img, width="stretch")
                     gpu_final_time = upd.get("total_elapsed_time", time.time() - loop_start_time)
                     gpu_final_solve = upd.get("total_solve_time", 0.0)
                     with gpu_progress_placeholder.container():
@@ -1817,12 +1817,12 @@ def run_progressive_rebalancing(
                 elif status == "period_plot_update" and not cpu_processed_plot:
                     _img = upd.get("figure")
                     if _img is not None:
-                        cpu_plot_container.image(_img, use_container_width=True)
+                        cpu_plot_container.image(_img, width="stretch")
                         cpu_processed_plot = True
                 elif status == "plot_ready":
                     _img = upd.get("figure")
                     if _img is not None:
-                        cpu_plot_container.image(_img, use_container_width=True)
+                        cpu_plot_container.image(_img, width="stretch")
                     with cpu_progress_placeholder.container():
                         st.success(upd.get("message", ""))
                 elif status == "ready":
@@ -1844,7 +1844,7 @@ def run_progressive_rebalancing(
                 elif status == "completed":
                     _img = upd.get("figure")
                     if _img is not None:
-                        cpu_plot_container.image(_img, use_container_width=True)
+                        cpu_plot_container.image(_img, width="stretch")
                     cpu_final_time = upd.get("total_elapsed_time", time.time() - loop_start_time)
                     cpu_final_solve = upd.get("total_solve_time", 0.0)
                     with cpu_progress_placeholder.container():
