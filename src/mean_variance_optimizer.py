@@ -424,42 +424,24 @@ class MeanVariance(base_optimizer.BaseOptimizer):
         else:
             timing["group_constraints"] = 0.0
 
-        # Step 4: Build objective using QuadraticExpression
+        # Step 4: Build objective using QuadraticExpression (matrix form)
         #   minimize: risk_aversion * (w' Σ w) - (μ' w)
-        #
-        # cuOpt format:
-        #   QuadraticExpression(quad_vars1, quad_vars2, quad_coeffs, lin_vars, lin_coeffs, constant)
 
-        # 4a: Build linear terms: -μ'w
+        # 4a: Quadratic term via matrix: risk_aversion * Σ passed directly
         t0 = time.time()
-        lin_vars = w_vars
+        q_matrix = (self.params.risk_aversion * self.covariance).tolist()
+        quad_expr = QuadraticExpression(q_matrix, w_vars)
+        timing["build_quad_matrix"] = time.time() - t0
+
+        # 4b: Linear term: -μ'w
+        t0 = time.time()
         lin_coeffs = [-float(self.mean[i]) for i in range(num_assets)]
-        timing["build_linear_arrays"] = time.time() - t0
+        lin_expr = LinearExpression(w_vars, lin_coeffs, 0.0)
+        timing["build_linear_expr"] = time.time() - t0
 
-        # 4b: Build quadratic terms for risk_aversion * (w' Σ w)
+        # 4c: Combine and set objective
         t0 = time.time()
-        # quad_vars1: each var repeated n times consecutively
-        quad_vars1 = [w for w in w_vars for _ in range(num_assets)]
-        # quad_vars2: full list repeated n times
-        quad_vars2 = w_vars * num_assets
-        timing["build_quad_vars"] = time.time() - t0
-
-        # 4c: Build quad_coeffs from covariance matrix
-        t0 = time.time()
-        q_matrix = self.params.risk_aversion * self.covariance
-        quad_coeffs = q_matrix.ravel().tolist()
-        timing["build_quad_coeffs"] = time.time() - t0
-
-        # 4d: Create QuadraticExpression in one shot
-        t0 = time.time()
-        objective_expr = QuadraticExpression(
-            quad_vars1, quad_vars2, quad_coeffs,
-            lin_vars, lin_coeffs, 0.0
-        )
-        timing["create_quad_expr"] = time.time() - t0
-
-        # 4e: Set objective
-        t0 = time.time()
+        objective_expr = quad_expr + lin_expr
         problem.setObjective(objective_expr, sense=MINIMIZE)
         timing["set_objective"] = time.time() - t0
 
@@ -468,8 +450,8 @@ class MeanVariance(base_optimizer.BaseOptimizer):
         print("cuOpt MEAN-VARIANCE (QP) PROBLEM SETUP COMPLETED")
         print(f"{'=' * 50}")
         print(f"Variables: {num_assets} weights + 1 cash + {2 * num_assets} leverage aux")
-        print(f"Quadratic terms: {len(quad_coeffs)}")
-        print(f"Linear terms: {len(lin_coeffs)}")
+        print(f"Covariance matrix: {num_assets}x{num_assets}")
+        print(f"Linear terms: {num_assets}")
         print("Problem Type: QP (Quadratic Programming)")
         print(f"{'=' * 50}")
 
