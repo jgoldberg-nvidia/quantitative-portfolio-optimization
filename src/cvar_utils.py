@@ -31,6 +31,7 @@ from .portfolio import Portfolio
 # Note: cvar_optimizer and cuml are imported lazily within functions to avoid
 # circular imports and loading CUDA libraries at module import time
 
+
 def generate_samples_kde(
     num_scen: int,
     returns_data: np.ndarray,
@@ -71,21 +72,22 @@ def generate_samples_kde(
 
     if kde_device == "CPU":
         start_time = time.time()
-        #fit kde and sample from it
+        # fit kde and sample from it
         kde = sklearn.neighbors.KernelDensity(kernel=kernel, bandwidth=bandwidth).fit(
             returns_data
         )
         new_samples = kde.sample(num_scen)
-        
+
         end_time = time.time()
         kde_time = end_time - start_time
-        
+
         if verbose:
             print(f"KDE fit on CPU in {kde_time} seconds.")
 
     elif kde_device == "GPU":
         # Lazy import to avoid loading CUDA libraries on module import
         import cuml.neighbors
+
         start_time = time.time()
         kde = cuml.neighbors.KernelDensity(kernel=kernel, bandwidth=bandwidth).fit(
             returns_data
@@ -141,7 +143,7 @@ def generate_cvar_data(returns_dict: dict, scenario_generation_settings: dict):
     returns_data = returns_dict["returns"].to_numpy()
     num_scen = scenario_generation_settings.get("num_scen")
     fit_type = scenario_generation_settings.get("fit_type")
-    verbose = scenario_generation_settings.get("verbose") 
+    verbose = scenario_generation_settings.get("verbose")
 
     if "kde_settings" in scenario_generation_settings:
         kde_settings = scenario_generation_settings["kde_settings"]
@@ -299,9 +301,9 @@ def optimize_market_regimes(
 
             # Set up optimization problem
             cvar_problem = cvar_optimizer.CVaR(
-                        returns_dict=returns_dict, cvar_params=cvar_params
+                returns_dict=returns_dict, cvar_params=cvar_params
             )
-        
+
             # Solve optimization problem
             try:
                 result, portfolio = cvar_problem.solve_optimization_problem(
@@ -784,15 +786,19 @@ def create_efficient_frontier(
 
     # Color schemes
     color_schemes = {
-            "modern": {
-                "frontier": "#7cd7fe",
-                "benchmark": ["#ef9100", "#ff8181", "#0d8473"], #NVIDIA orange, red, dark teal
-                "assets": "#c359ef",
-                "custom": "#fc79ca",
-                "background": "#FFFFFF",
-                "grid": "#E0E0E0",
-            }
+        "modern": {
+            "frontier": "#7cd7fe",
+            "benchmark": [
+                "#ef9100",
+                "#ff8181",
+                "#0d8473",
+            ],  # NVIDIA orange, red, dark teal
+            "assets": "#c359ef",
+            "custom": "#fc79ca",
+            "background": "#FFFFFF",
+            "grid": "#E0E0E0",
         }
+    }
     colors = color_schemes[color_scheme]
 
     # Set style

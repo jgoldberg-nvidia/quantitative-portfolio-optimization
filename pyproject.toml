@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "black==25.9.0",
+    "black[jupyter]==25.9.0",
     "isort",
     "flake8",
     "pre-commit==4.3.0",

@@ -243,13 +243,10 @@ class rebalance_portfolio:
                 }
 
                 optimize_returns_dict = utils.calculate_returns(
-                    self.price_data,
-                    optimize_regime,
-                    self.returns_compute_settings
+                    self.price_data, optimize_regime, self.returns_compute_settings
                 )
                 optimize_returns_dict = cvar_utils.generate_cvar_data(
-                    optimize_returns_dict, 
-                    self.scenario_generation_settings
+                    optimize_returns_dict, self.scenario_generation_settings
                 )
 
                 re_optimize_problem = cvar_optimizer.CVaR(
@@ -570,7 +567,11 @@ class rebalance_portfolio:
         color_schemes = {
             "modern": {
                 "frontier": "#7cd7fe",
-                "benchmark": ["#ef9100", "#ff8181", "#0d8473"], #NVIDIA orange, red, dark teal
+                "benchmark": [
+                    "#ef9100",
+                    "#ff8181",
+                    "#0d8473",
+                ],  # NVIDIA orange, red, dark teal
                 "assets": "#c359ef",
                 "custom": "#fc79ca",
                 "background": "#FFFFFF",

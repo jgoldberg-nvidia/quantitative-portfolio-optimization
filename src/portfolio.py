@@ -362,7 +362,7 @@ class Portfolio:
 
         colors = color_schemes.get(style, color_schemes["modern"])
         plt.style.use("seaborn-v0_8-whitegrid")
-        
+
         # Create figure if needed
         if ax is None:
             fig, ax = plt.subplots(
