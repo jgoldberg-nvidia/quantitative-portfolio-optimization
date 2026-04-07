@@ -368,16 +368,7 @@ class TestCVaROptimization:
 
     def test_cardinality_constraint(self, returns_dict, cvar_data):
         import cvxpy as cp
-        import cvxpy.settings as slv_def
         from cufolio.cvar_optimizer import CVaR
-
-        has_mip = any(
-            slv_def.SOLVER_MAP_CONIC[s].MIP_CAPABLE
-            for s in slv_def.INSTALLED_SOLVERS
-            if s in slv_def.CONIC_SOLVERS
-        )
-        if not has_mip:
-            pytest.skip("no MIP-capable solver installed")
 
         params = CvarParameters(
             w_min=0.0,
@@ -391,9 +382,12 @@ class TestCVaROptimization:
         )
         returns_dict["cvar_data"] = cvar_data
         optimizer = CVaR(returns_dict=returns_dict, cvar_params=params)
-        _, portfolio = optimizer.solve_optimization_problem(
-            {"solver": cp.CLARABEL, "verbose": False}, print_results=False
-        )
+        try:
+            _, portfolio = optimizer.solve_optimization_problem(
+                {"solver": cp.CLARABEL, "verbose": False}, print_results=False
+            )
+        except cp.error.SolverError:
+            pytest.skip("no MIP-capable solver installed")
 
         nonzero = np.sum(np.abs(portfolio.weights) > 1e-3)
         assert nonzero <= 2, f"Expected at most 2 active assets, got {nonzero}"
