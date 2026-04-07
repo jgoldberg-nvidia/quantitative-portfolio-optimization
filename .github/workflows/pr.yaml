@@ -1,0 +1,69 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Check formatting with black
+        run: uv run black --check src/ notebooks/
+
+      - name: Check import order with isort
+        run: uv run isort --check-only src/ notebooks/
+
+      - name: Lint with flake8
+        run: uv run flake8 src/
+
+  install-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: uv sync
+
+      - name: Verify import
+        run: uv run python -c "import cufolio"
+
+  pr-builder:
+    if: always()
+    needs: [lint, install-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.install-check.result }}" != "success" ]]; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
