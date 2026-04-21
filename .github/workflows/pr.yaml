@@ -10,6 +10,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lockfile-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Verify lockfile resolves across all extras and Python range
+        run: uv lock --locked
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -58,12 +70,12 @@ jobs:
 
   pr-builder:
     if: always()
-    needs: [lint, install-and-test]
+    needs: [lockfile-check, lint, install-and-test]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
         run: |
-          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.install-and-test.result }}" != "success" ]]; then
+          if [[ "${{ needs.lockfile-check.result }}" != "success" || "${{ needs.lint.result }}" != "success" || "${{ needs.install-and-test.result }}" != "success" ]]; then
             echo "One or more required jobs failed."
             exit 1
           fi
