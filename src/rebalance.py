@@ -46,6 +46,7 @@ import seaborn as sns
 from matplotlib.lines import Line2D
 
 from . import backtest, cvar_optimizer, cvar_parameters, cvar_utils, portfolio, utils
+from .settings import ReturnsComputeSettings, ScenarioGenerationSettings
 
 
 class rebalance_portfolio:
@@ -60,10 +61,10 @@ class rebalance_portfolio:
     ----------
     dataset_directory : str
         Path to asset universe data.
-    returns_compute_settings : dict
-        Settings for computing returns.
-    scenario_generation_settings : dict
-        Settings for generating return scenarios.
+    returns_compute_settings : ReturnsComputeSettings
+        Configuration for computing returns from price data.
+    scenario_generation_settings : ScenarioGenerationSettings
+        Configuration for generating return scenarios.
     trading_start, trading_end : str
         Trading period boundaries in YYYY-MM-DD format.
     look_forward_window : int
@@ -83,8 +84,8 @@ class rebalance_portfolio:
     def __init__(
         self,
         dataset_directory: str,
-        returns_compute_settings: dict,
-        scenario_generation_settings: dict,
+        returns_compute_settings: ReturnsComputeSettings,
+        scenario_generation_settings: ScenarioGenerationSettings,
         trading_start: str,
         trading_end: str,
         look_forward_window: int,
@@ -127,9 +128,9 @@ class rebalance_portfolio:
             self.dataset_directory, index_col=0, parse_dates=True
         )
         price_data_start = self.trading_start - pd.Timedelta(days=self.look_back_window)
-        assert (
-            price_data_start >= self.price_data.index[0]
-        ), "Invalid start date - choose a later date!"
+        assert price_data_start >= self.price_data.index[0], (
+            "Invalid start date - choose a later date!"
+        )
 
     def re_optimize(
         self,
@@ -139,6 +140,7 @@ class rebalance_portfolio:
         run_re_optimize: bool = True,
         save_plot: bool = False,
         results_dir: str = "results",
+        plot_title: str = None,
     ):
         """Execute rebalancing strategy over the trading period.
 
@@ -159,6 +161,9 @@ class rebalance_portfolio:
             Whether to save generated plots.
         results_dir : str, default "results"
             Directory for saving plots.
+        plot_title : str, optional
+            Custom title for the performance plot. If not provided, a title
+            is generated from the rebalancing strategy type.
 
         Returns
         -------
@@ -243,13 +248,10 @@ class rebalance_portfolio:
                 }
 
                 optimize_returns_dict = utils.calculate_returns(
-                    self.price_data,
-                    optimize_regime,
-                    self.returns_compute_settings
+                    self.price_data, optimize_regime, self.returns_compute_settings
                 )
                 optimize_returns_dict = cvar_utils.generate_cvar_data(
-                    optimize_returns_dict, 
-                    self.scenario_generation_settings
+                    optimize_returns_dict, self.scenario_generation_settings
                 )
 
                 re_optimize_problem = cvar_optimizer.CVaR(
@@ -344,6 +346,31 @@ class rebalance_portfolio:
             backtest_idx += self.look_forward_window
             backtest_date = self.dates_range[backtest_idx]
 
+        # Backtest the last portfolio over any remaining dates so the plot
+        # covers the full trading period.
+        if backtest_idx < len(self.dates_range) - 1:
+            tail_regime = {
+                "name": "backtest",
+                "range": (
+                    self.dates_range[backtest_idx].strftime("%Y-%m-%d"),
+                    self.dates_range[-1].strftime("%Y-%m-%d"),
+                ),
+            }
+            tail_returns = utils.calculate_returns(
+                self.price_data, tail_regime, self.returns_compute_settings
+            )
+            tail_bt = backtest.portfolio_backtester(
+                current_portfolio, tail_returns, benchmark_portfolios=None
+            )
+            tail_result = tail_bt.backtest_single_portfolio(current_portfolio)
+            cumulative_portfolio_value_array = np.concatenate(
+                (
+                    cumulative_portfolio_value_array,
+                    tail_result["cumulative returns"].values[0] * portfolio_value,
+                )
+            )
+            cumulative_portfolio_value_dates.extend(tail_bt._dates)
+
         # Convert to pandas Series with dates as index, ensuring proper datetime format
         cumulative_portfolio_value_dates_clean = pd.to_datetime(
             cumulative_portfolio_value_dates
@@ -374,6 +401,7 @@ class rebalance_portfolio:
                 cumulative_portfolio_value,
                 save_plot,
                 results_dir,
+                plot_title,
             )
 
         return results_dataframe, re_optimize_dates, cumulative_portfolio_value
@@ -546,6 +574,7 @@ class rebalance_portfolio:
         cumulative_portfolio_value: pd.Series,
         save_plot: bool = False,
         results_dir: str = "results",
+        plot_title: str = None,
     ):
         """Generate portfolio performance comparison plots.
 
@@ -564,13 +593,20 @@ class rebalance_portfolio:
             Whether to save the plot.
         results_dir : str, default "results"
             Directory for saving plots.
+        plot_title : str, optional
+            Custom title for the plot. If not provided, a title is generated
+            from the rebalancing strategy type.
         """
 
         # Use the same styling as efficient frontier
         color_schemes = {
             "modern": {
                 "frontier": "#7cd7fe",
-                "benchmark": ["#ef9100", "#ff8181", "#0d8473"], #NVIDIA orange, red, dark teal
+                "benchmark": [
+                    "#ef9100",
+                    "#ff8181",
+                    "#0d8473",
+                ],  # NVIDIA orange, red, dark teal
                 "assets": "#c359ef",
                 "custom": "#fc79ca",
                 "background": "#FFFFFF",
@@ -678,11 +714,13 @@ class rebalance_portfolio:
         ax.set_xlabel("Date", fontsize=14, fontweight="bold")
         ax.set_ylabel("Cumulative Portfolio Value", fontsize=14, fontweight="bold")
 
-        # Create title based on rebalancing criteria
-        rebalance_type = self.re_optimize_type.replace("_", " ").title()
-        if rebalance_type == "Pct Change":
-            rebalance_type = "Percentage Change"
-        title = f"\n{rebalance_type} Rebalancing Strategy"
+        if plot_title is None:
+            rebalance_type = self.re_optimize_type.replace("_", " ").title()
+            if rebalance_type == "Pct Change":
+                rebalance_type = "Percentage Change"
+            title = f"\n{rebalance_type} Rebalancing Strategy"
+        else:
+            title = f"\n{plot_title}"
         ax.set_title(title, fontsize=16, fontweight="bold", pad=20)
 
         # Grid and styling
@@ -749,27 +787,26 @@ class rebalance_portfolio:
         # Ensure the x-axis is treated as datetime
         ax.xaxis_date()
 
-        # Set reasonable date formatting based on date range
-        date_range = (
-            cumulative_portfolio_value.index.max()
-            - cumulative_portfolio_value.index.min()
-        )
-        if date_range.days > 365:
-            # For longer periods, show year-month
+        trading_period = self.trading_end - self.trading_start
+        if trading_period.days > 730:
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
             ax.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+        elif trading_period.days > 365:
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+            ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
         else:
-            # For shorter periods, show month-day
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
             ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
 
         # Rotate x-axis labels for better readability
         ax.tick_params(axis="x", labelrotation=45)
 
-        # Set x-axis limits to the actual data range
+        # Set x-axis limits to the full trading period so the plot always
+        # spans trading_start to trading_end, even if the simulation data
+        # ends slightly before trading_end due to look_forward_window.
         ax.set_xlim(
-            cumulative_portfolio_value.index.min(),
-            cumulative_portfolio_value.index.max(),
+            self.trading_start,
+            self.trading_end,
         )
 
         # Set y-axis limits to zoom into the actual data range with some padding
@@ -857,7 +894,12 @@ class rebalance_portfolio:
 
         return buy_and_hold_results_dataframe, cumulative_portfolio_value
 
-    def plot_weights_vs_prices(self, re_optimize_results: pd.DataFrame, ticker: str):
+    def plot_weights_vs_prices(
+        self,
+        re_optimize_results: pd.DataFrame,
+        ticker: str,
+        plot_title: str = None,
+    ):
         """Plot portfolio weights evolution against price movements.
 
         Creates dual-axis plot showing asset prices and portfolio weight
@@ -869,15 +911,18 @@ class rebalance_portfolio:
             Rebalancing results with optimal portfolios.
         ticker : str
             Asset ticker symbol. Must exist in asset universe.
+        plot_title : str, optional
+            Custom title for the plot. If not provided, defaults to
+            "{ticker} weights vs. prices".
 
         Raises
         ------
         AssertionError
             If ticker not found in price data.
         """
-        assert (
-            ticker in self.price_data.columns
-        ), "The selected ticker is not in the asset universe!"
+        assert ticker in self.price_data.columns, (
+            "The selected ticker is not in the asset universe!"
+        )
 
         ticker_idx = list(self.price_data.columns).index(ticker)
         ticker_weights_history = [
@@ -889,7 +934,9 @@ class rebalance_portfolio:
         plot_end_date = re_optimize_results.index[-1]
         price_data = self.price_data.loc[plot_start_date:plot_end_date, ticker]
         ax1.plot(price_data, color="red", label=f"{ticker} prices")
-        ax1.set_title(f"{ticker} weights vs. prices")
+        ax1.set_title(
+            plot_title if plot_title is not None else f"{ticker} weights vs. prices"
+        )
 
         ax2 = ax1.twinx()
         ax2.bar(

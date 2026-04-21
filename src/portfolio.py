@@ -265,9 +265,9 @@ class Portfolio:
         float
             Portfolio expected return
         """
-        assert (
-            mean.shape[0] == self._n_assets
-        ), f"Incorrect mean vector size! Expecting: {self._n_assets}."
+        assert mean.shape[0] == self._n_assets, (
+            f"Incorrect mean vector size! Expecting: {self._n_assets}."
+        )
 
         return mean @ self.weights
 
@@ -362,7 +362,7 @@ class Portfolio:
 
         colors = color_schemes.get(style, color_schemes["modern"])
         plt.style.use("seaborn-v0_8-whitegrid")
-        
+
         # Create figure if needed
         if ax is None:
             fig, ax = plt.subplots(
