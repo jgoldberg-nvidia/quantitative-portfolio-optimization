@@ -19,7 +19,7 @@ Portfolio backtesting and performance evaluation framework.
 
 Provides tools for backtesting portfolio strategies against historical data
 and benchmarks, with support for various return metrics and scenario generation
-methods including historical, KDE, and Gaussian simulation..
+methods including historical, KDE, and Gaussian simulation.
 """
 
 import os
