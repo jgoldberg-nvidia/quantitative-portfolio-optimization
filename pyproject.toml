@@ -3,7 +3,7 @@ name = "cufolio"
 version = "25.10"
 description = "Quantitative Portfolio Optimization developer example"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.0.0",
     "pandas>=2.0",
@@ -32,7 +32,7 @@ cuda13 = [
 
 [tool.black]
 line-length = 88
-target-version = ['py310']
+target-version = ['py311']
 
 [tool.isort]
 profile = "black"
