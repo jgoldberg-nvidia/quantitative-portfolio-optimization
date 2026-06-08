@@ -20,7 +20,7 @@ agent reasoning from scratch. Required for catalog publication.
 | Agents | Claude Code **and** Codex (evaluate both per the publishing guide) |
 | Model(s) | _TBD_ (record exact model + version) |
 | Harness | NV-BASE (NV-ACES / Harbor) |
-| Dataset | [`evals/evals.json`](evals/evals.json) — 5 positive + 4 negative cases |
+| Dataset | [`evals/evals.json`](evals/evals.json) — 6 positive + 4 negative cases |
 | Hardware | NVIDIA GPU (cuOpt + cuML); record GPU model |
 | Data | S&P 500 daily prices via `cufolio.utils.download_data` |
 
@@ -46,7 +46,7 @@ Each task run with the skill installed and again with it removed (baseline).
 |---|---|---|
 | Positive tasks completed (goal_accuracy) | _TBD_ | _TBD_ |
 | Behavior steps passed (behavior_check) | _TBD_ | _TBD_ |
-| Trigger accuracy — fires on the 5 positives | _TBD_ | _TBD_ |
+| Trigger accuracy — fires on the 6 positives | _TBD_ | _TBD_ |
 | Trigger accuracy — silent on the 4 negatives | _TBD_ | _TBD_ |
 | Avg tokens / task | _TBD_ | _TBD_ |
 | Avg wall-clock / task | _TBD_ | _TBD_ |
@@ -54,7 +54,7 @@ Each task run with the skill installed and again with it removed (baseline).
 Expected qualitative uplift (what the skill encodes that a baseline agent misses):
 forcing `c_max=0.0` to avoid the all-cash optimum (Trap 2), passing
 `show_discretized_portfolios=False` (Trap 4), using the manual loop only when weights
-are needed (Trap 3), and always solving on GPU with cuOpt (`SOLVER_SETTINGS`).
+are needed (Trap 3), always solving on GPU with cuOpt (`CVAR_SOLVER_SETTINGS`), and routing variance-cap requests to the direct cuOpt SOCP path.
 
 ## Track B — Skill performance standards (Layer 3)
 
@@ -64,6 +64,7 @@ Deterministic end-to-end runs of the documented workflows, graded against
 | Workflow | Standard | Result |
 |---|---|---|
 | build-optimal | non-degenerate (not all-cash), sum(w)≈1, cuOpt, < 60s | _TBD_ |
+| socp-variance-limit | direct cuOpt Mean-Variance solve, realized variance <= cap, SOCP/QCQP label | _TBD_ |
 | efficient-frontier | 25 points, return monotonic in CVaR, no `sum_to_one` crash | _TBD_ |
 | weights-table | per-asset weight columns present | _TBD_ |
 | backtest | optimized Sharpe > equal-weight Sharpe | _TBD_ |

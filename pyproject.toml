@@ -21,12 +21,12 @@ dev = [
     "pre-commit==4.3.0",
 ]
 cuda12 = [
-    "cuml-cu12==26.4.*",
-    "cuopt-cu12==26.04.*",
+    "cuml-cu12==26.8.*",
+    "cuopt-cu12==26.8.*",
 ]
 cuda13 = [
-    "cuml-cu13==26.4.*",
-    "cuopt-cu13==26.04.*",
+    "cuml-cu13==26.8.*",
+    "cuopt-cu13==26.8.*",
 ]
 
 [tool.ruff]

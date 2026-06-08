@@ -1,5 +1,5 @@
 ## Description: <br>
-Build GPU-accelerated Mean-CVaR portfolios with NVIDIA cuOpt — CVaR optimization, efficient frontier, scenario generation, backtesting, and rebalancing. <br>
+Build GPU-accelerated Mean-CVaR and Mean-Variance/SOCP portfolios with NVIDIA cuOpt — CVaR optimization, variance-cap SOCP, efficient frontier, scenario generation, backtesting, and rebalancing. <br>
 
 This skill is ready for commercial/non-commercial use. <br>
 
@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache-2.0 <br>
 ## Use Case: <br>
-Quantitative researchers and engineers use this skill to construct and analyze Mean-CVaR portfolios with NVIDIA's GPU-accelerated cuOpt solver: optimal allocation, efficient frontier generation, strategy backtesting, and dynamic rebalancing. <br>
+Quantitative researchers and engineers use this skill to construct and analyze Mean-CVaR portfolios and Mean-Variance variance-cap SOCP allocations with the NVIDIA GPU-accelerated cuOpt solver: optimal allocation, efficient frontier generation, strategy backtesting, and dynamic rebalancing. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -34,7 +34,7 @@ Mitigation: Review and scan skill before deployment. <br>
 - codex <br>
 
 ## Evaluation Tasks: <br>
-Evaluated against 9 cases (5 positive + 4 negative) with 2 attempts per agent; pass threshold 60%. NVSkills-Eval profile: external. Results pending the GPU agent-eval run (see `evals/EVAL.md` and `BENCHMARK.md`). <br>
+Evaluated against 10 cases (6 positive + 4 negative) with 2 attempts per agent; pass threshold 60%. NVSkills-Eval profile: external. Results pending the GPU agent-eval run (see `evals/EVAL.md` and `BENCHMARK.md`). <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>

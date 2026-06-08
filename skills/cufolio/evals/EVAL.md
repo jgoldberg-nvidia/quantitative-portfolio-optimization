@@ -30,8 +30,8 @@ described in `tests/benchmarks/benchmark_workflows.py` / `tests/benchmarks/thres
 
 The positive `expected_behavior` lists deliberately encode the SKILL.md **Traps** (the skill's value
 over reasoning from scratch): forcing `c_max=0.0` to avoid the all-cash optimum, passing
-`show_discretized_portfolios=False`, using the manual loop only when weights are needed, and always
-solving with the cuOpt `SOLVER_SETTINGS`. A baseline agent (no skill) typically misses these.
+`show_discretized_portfolios=False`, using the manual loop only when weights are needed, always
+solving CVaR workflows with the cuOpt `CVAR_SOLVER_SETTINGS`, and routing variance-cap requests to the direct cuOpt SOCP path. A baseline agent (no skill) typically misses these.
 
 ## Prerequisites
 
