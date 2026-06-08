@@ -77,9 +77,19 @@ cvar_dir = workspace_root  # For backward compatibility with path references
 try:
     # Import cufolio package
     import cvxpy as cp
-    from cufolio import backtest, cvar_optimizer, cvar_utils, rebalance, utils
+
+    from cufolio import (
+        backtest,
+        cvar_optimizer,
+        cvar_utils,
+        mean_variance_optimizer,
+        rebalance,
+        utils,
+    )
     from cufolio.cvar_parameters import CvarParameters
+    from cufolio.mean_variance_parameters import MeanVarianceParameters
     from cufolio.settings import (
+        ApiSettings,
         KDESettings,
         ReturnsComputeSettings,
         ScenarioGenerationSettings,
@@ -614,6 +624,264 @@ def get_dataset_num_assets(dataset_name):
     return 30  # Fallback
 
 
+
+def _variance_cap_from_equal_weight(
+    returns_dict: dict, multiplier: float = 1.05
+) -> tuple[float, float, float]:
+    covariance = np.asarray(returns_dict["covariance"], dtype=float)
+    mean = np.asarray(returns_dict["mean"], dtype=float)
+    n_assets = len(returns_dict["tickers"])
+    weights = np.ones(n_assets) / n_assets
+    variance = float(weights @ covariance @ weights)
+    expected_return = float(mean @ weights)
+    return variance * float(multiplier), variance, expected_return
+
+
+def run_socp_variance_limit_preview(
+    dataset_path: str,
+    trading_range: tuple,
+    returns_compute_settings,
+    variance_cap_multiplier: float,
+) -> dict:
+    """Run a direct cuOpt Mean-Variance solve with a quadratic variance cap."""
+    regime = {"name": "SOCP Preview", "range": trading_range}
+    returns_dict = utils.calculate_returns(dataset_path, regime, returns_compute_settings)
+    tickers = list(returns_dict["tickers"])
+    covariance = np.asarray(returns_dict["covariance"], dtype=float)
+    variance_limit, equal_weight_variance, equal_weight_return = (
+        _variance_cap_from_equal_weight(returns_dict, variance_cap_multiplier)
+    )
+
+    params = MeanVarianceParameters(
+        w_min=0.0,
+        w_max=1.0,
+        c_min=0.0,
+        c_max=0.0,
+        L_tar=1.0,
+        var_limit=variance_limit,
+    )
+    optimizer = mean_variance_optimizer.MeanVariance(
+        returns_dict,
+        params,
+        api_settings=ApiSettings(api="cuopt_python"),
+    )
+
+    start = time.time()
+    result, portfolio = optimizer.solve_optimization_problem(print_results=False)
+    elapsed = time.time() - start
+
+    weights = np.asarray(portfolio.weights, dtype=float).flatten()
+    cash = float(np.asarray(portfolio.cash, dtype=float).squeeze())
+    realized_variance = float(weights @ covariance @ weights)
+    expected_return = float(result["return"])
+    solve_time = float(result.get("solve time", elapsed))
+    risk_budget_used = (
+        realized_variance / variance_limit if variance_limit > 0 else np.nan
+    )
+    marginal_risk = covariance @ weights
+    risk_contribution = weights * marginal_risk
+    if abs(realized_variance) > 1e-15:
+        risk_contribution_pct = risk_contribution / realized_variance
+    else:
+        risk_contribution_pct = np.zeros_like(weights)
+
+    return {
+        "success": True,
+        "problem_type": "SOCP/QCQP",
+        "solver": str(result["solver"]),
+        "solve_seconds": solve_time,
+        "elapsed_seconds": float(elapsed),
+        "expected_return": expected_return,
+        "variance": realized_variance,
+        "variance_limit": float(variance_limit),
+        "variance_cap_multiplier": float(variance_cap_multiplier),
+        "risk_budget_used": float(risk_budget_used),
+        "equal_weight_variance": float(equal_weight_variance),
+        "equal_weight_return": float(equal_weight_return),
+        "cash_weight": cash,
+        "weight_sum": float(weights.sum() + cash),
+        "n_positions": int(np.sum(np.abs(weights) > 1e-4)),
+        "tickers": tickers,
+        "weights": weights,
+        "risk_contribution_pct": risk_contribution_pct,
+    }
+
+
+def _build_socp_budget_figure(socp_result: dict):
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=["Equal Weight", "SOCP Result"],
+            y=[socp_result["equal_weight_variance"], socp_result["variance"]],
+            marker_color=["#ef9100", "#76b900"],
+            text=[
+                f"{socp_result['equal_weight_variance']:.3e}",
+                f"{socp_result['variance']:.3e}",
+            ],
+            textposition="outside",
+            hovertemplate="%{x}<br>Variance: %{y:.6e}<extra></extra>",
+        )
+    )
+    fig.add_hline(
+        y=socp_result["variance_limit"],
+        line_dash="dash",
+        line_color="#f9c500",
+        annotation_text="Variance cap",
+        annotation_font_color="#f9c500",
+    )
+    fig.update_layout(
+        title=dict(text="Variance Budget", font=dict(size=16, color="#fafafa")),
+        paper_bgcolor="#000000",
+        plot_bgcolor="#000000",
+        xaxis=dict(color="#aaa"),
+        yaxis=dict(gridcolor="#222", color="#aaa", title="Variance"),
+        margin=dict(l=60, r=20, t=50, b=40),
+        height=360,
+        showlegend=False,
+    )
+    return fig
+
+
+def _build_socp_risk_return_figure(socp_result: dict):
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[socp_result["equal_weight_variance"]],
+            y=[socp_result["equal_weight_return"]],
+            mode="markers+text",
+            text=["Equal Weight"],
+            textposition="top center",
+            marker=dict(size=13, color="#ef9100", line=dict(width=1, color="white")),
+            name="Equal Weight",
+            hovertemplate="Variance: %{x:.6e}<br>Return: %{y:.6e}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[socp_result["variance"]],
+            y=[socp_result["expected_return"]],
+            mode="markers+text",
+            text=["SOCP"],
+            textposition="bottom center",
+            marker=dict(size=15, color="#76b900", line=dict(width=1, color="white")),
+            name="SOCP",
+            hovertemplate="Variance: %{x:.6e}<br>Return: %{y:.6e}<extra></extra>",
+        )
+    )
+    fig.add_vline(
+        x=socp_result["variance_limit"],
+        line_dash="dash",
+        line_color="#f9c500",
+        annotation_text="Cap",
+        annotation_font_color="#f9c500",
+    )
+    fig.update_layout(
+        title=dict(text="Risk / Return", font=dict(size=16, color="#fafafa")),
+        paper_bgcolor="#000000",
+        plot_bgcolor="#000000",
+        xaxis=dict(gridcolor="#222", color="#aaa", title="Variance"),
+        yaxis=dict(gridcolor="#222", color="#aaa", title="Expected Return"),
+        margin=dict(l=60, r=20, t=50, b=40),
+        height=360,
+        legend=dict(font=dict(color="#ccc"), bgcolor="rgba(0,0,0,0)"),
+    )
+    return fig
+
+
+def _socp_weights_dict(socp_result: dict) -> dict:
+    weights = {
+        ticker: float(weight)
+        for ticker, weight in zip(socp_result["tickers"], socp_result["weights"])
+    }
+    weights["cash"] = float(socp_result["cash_weight"])
+    return weights
+
+
+def _socp_holdings_table(
+    socp_result: dict,
+    mask_names: bool,
+    notional: int,
+    max_rows: int = DefaultValues.SOCP_TOP_HOLDINGS,
+) -> pd.DataFrame:
+    tickers = list(socp_result["tickers"])
+    if mask_names:
+        labels = [f"Asset {idx + 1}" for idx in range(len(tickers))]
+    else:
+        labels = tickers
+    df = pd.DataFrame(
+        {
+            "Asset": labels,
+            "Weight": np.asarray(socp_result["weights"], dtype=float),
+            "Notional": np.asarray(socp_result["weights"], dtype=float)
+            * float(notional),
+            "Risk Contribution (%)": np.asarray(
+                socp_result["risk_contribution_pct"], dtype=float
+            )
+            * 100.0,
+        }
+    )
+    df["_abs_weight"] = df["Weight"].abs()
+    df = df[df["_abs_weight"] > 1e-6].sort_values("_abs_weight", ascending=False)
+    return df.head(max_rows).drop(columns="_abs_weight")
+
+
+def render_socp_preview(socp_result: dict, notional: int, blog_mode: bool):
+    st.markdown(
+        '<div class="section-header">🧪 SOCP Variance-Cap Preview</div>',
+        unsafe_allow_html=True,
+    )
+    if not socp_result.get("success"):
+        st.error(socp_result.get("message", "SOCP preview failed"))
+        with st.expander("Error details"):
+            st.code(socp_result.get("error", ""))
+        return
+
+    budget_used = socp_result["risk_budget_used"]
+    cols = st.columns(5)
+    cols[0].metric("Problem", socp_result["problem_type"])
+    cols[1].metric("Solver", socp_result["solver"])
+    cols[2].metric("Solve Time", f"{socp_result['solve_seconds']:.3f}s")
+    cols[3].metric("Variance Used", f"{budget_used:.1%}")
+    cols[4].metric("Positions", socp_result["n_positions"])
+
+    cols = st.columns(4)
+    cols[0].metric("Expected Return", f"{socp_result['expected_return']:.6f}")
+    cols[1].metric("Variance", f"{socp_result['variance']:.6e}")
+    cols[2].metric("Variance Cap", f"{socp_result['variance_limit']:.6e}")
+    cols[3].metric("Weight + Cash", f"{socp_result['weight_sum']:.6f}")
+
+    if socp_result["variance"] <= socp_result["variance_limit"] + 1e-8:
+        st.success("Variance cap satisfied by the direct cuOpt SOCP/QCQP solve.")
+    else:
+        st.error("Variance cap was exceeded; inspect solver status and tolerances.")
+
+    chart_col1, chart_col2 = st.columns(2)
+    with chart_col1:
+        st.plotly_chart(_build_socp_budget_figure(socp_result), width="stretch")
+    with chart_col2:
+        st.plotly_chart(_build_socp_risk_return_figure(socp_result), width="stretch")
+
+    st.plotly_chart(
+        _build_portfolio_treemap(
+            _socp_weights_dict(socp_result),
+            "— SOCP Variance Cap",
+            notional=notional,
+            mask_names=blog_mode,
+        ),
+        width="stretch",
+    )
+    st.dataframe(
+        _socp_holdings_table(socp_result, blog_mode, notional),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Weight": st.column_config.NumberColumn(format="%.4f"),
+            "Notional": st.column_config.NumberColumn(format="$%.0f"),
+            "Risk Contribution (%)": st.column_config.NumberColumn(format="%.2f"),
+        },
+    )
+
+
 def _fig_to_png_bytes(fig):
     import io
 
@@ -1028,7 +1296,6 @@ def create_rebalancing_progressive(
                     cvar_params=r.cvar_params,
                     existing_portfolio=existing_ptf_for_turnover,
                 )
-                t0 = time.time()
                 solver_result, current_portfolio = (
                     opt_problem.solve_optimization_problem(
                         r.solver_settings, print_results=False
@@ -1373,7 +1640,6 @@ def create_rebalancing_cpu_worker(
     Sends only serializable data (no matplotlib figures) through mp_queue.
     """
     try:
-        import numpy as _np
         import pandas as _pd
 
         # Lazy imports inside subprocess to avoid CUDA contamination
@@ -2033,18 +2299,6 @@ def run_progressive_rebalancing(
 
     # Build solver settings
     gpu_settings = {"solver": cp.CUOPT, "verbose": SolverConfig.SOLVER_VERBOSE}
-    cpu_solver_map = {
-        "HIGHS": cp.HIGHS,
-        "CLARABEL": cp.CLARABEL,
-        "ECOS": cp.ECOS,
-        "OSQP": cp.OSQP,
-        "SCS": cp.SCS,
-    }
-    cpu_settings = {
-        "solver": cpu_solver_map.get(cpu_solver_choice, cp.HIGHS),
-        "verbose": SolverConfig.SOLVER_VERBOSE,
-    }
-
     # Queues
     gpu_progress_q: queue.Queue = queue.Queue()
     cpu_progress_q: queue.Queue = queue.Queue()
@@ -2157,13 +2411,9 @@ def run_progressive_rebalancing(
     gpu_last_progress = {}
     cpu_last_progress = {}
     loop_start_time = time.time()
-    gpu_last_progress_time = loop_start_time
-    cpu_last_progress_time = loop_start_time
     last_idle_render_time = 0.0
     header_clear_time = loop_start_time + 3.0
     header_cleared = False
-    gpu_final_time = None
-    cpu_final_time = None
     gpu_prev_weights = {}
     cpu_prev_weights = {}
     gpu_reopt_snapshot = {}
@@ -2184,9 +2434,6 @@ def run_progressive_rebalancing(
         "bh_values": [],
         "rebal_dates": [],
     }
-    gpu_display_idx = 0
-    cpu_display_idx = 0
-
     # Show initial waiting bars immediately
     with gpu_solving_placeholder.container():
         st.progress(0.0, text="⏳ Initializing GPU...")
@@ -2195,11 +2442,7 @@ def run_progressive_rebalancing(
 
     # Main loop: drain queues frequently, continue until animation finishes
     while True:
-        gpu_had_update = False
-        cpu_had_update = False
-
         # GPU updates - process ALL pending progress updates for immediate response
-        gpu_processed_plot = False
         try:
             while True:  # Process all pending GPU updates
                 upd = gpu_progress_q.get_nowait()
@@ -2208,8 +2451,6 @@ def run_progressive_rebalancing(
                     with gpu_progress_placeholder.container():
                         st.info(upd.get("message", ""))
                 elif status == "period_update":
-                    gpu_had_update = True
-                    gpu_last_progress_time = time.time()
                     gpu_last_progress = upd
                     # 1) Update plot data
                     gpu_plot_data = {
@@ -2219,7 +2460,6 @@ def run_progressive_rebalancing(
                         "bh_values": upd.get("bh_values", []),
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
-                    gpu_display_idx = len(gpu_plot_data["cum_dates"])
                     # 2) Render animation frame (clip buy-and-hold to match cumulative range)
                     _gpu_bh_clip = len(gpu_plot_data["cum_dates"])
                     gpu_plot_container.image(
@@ -2290,9 +2530,6 @@ def run_progressive_rebalancing(
                         "bh_values": upd.get("bh_values", []),
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
-                    gpu_final_time = upd.get(
-                        "total_elapsed_time", time.time() - loop_start_time
-                    )
                     gpu_final_solve = upd.get("total_solve_time", 0.0)
                     with gpu_progress_placeholder.container():
                         st.success(f"GPU completed (solver: {gpu_final_solve:.2f}s)")
@@ -2311,7 +2548,6 @@ def run_progressive_rebalancing(
             pass
 
         # CPU updates - process ALL pending progress updates for immediate response
-        cpu_processed_plot = False
         try:
             while True:  # Process all pending CPU updates
                 upd = cpu_progress_q.get_nowait()
@@ -2320,8 +2556,6 @@ def run_progressive_rebalancing(
                     with cpu_progress_placeholder.container():
                         st.info(upd.get("message", ""))
                 elif status == "period_update":
-                    cpu_had_update = True
-                    cpu_last_progress_time = time.time()
                     cpu_last_progress = upd
                     # 1) Update plot data
                     cpu_plot_data = {
@@ -2331,7 +2565,6 @@ def run_progressive_rebalancing(
                         "bh_values": upd.get("bh_values", []),
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
-                    cpu_display_idx = len(cpu_plot_data["cum_dates"])
                     # 2) Render animation frame (clip buy-and-hold to match cumulative range)
                     _cpu_bh_clip = len(cpu_plot_data["cum_dates"])
                     cpu_plot_container.image(
@@ -2402,9 +2635,6 @@ def run_progressive_rebalancing(
                         "bh_values": upd.get("bh_values", []),
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
-                    cpu_final_time = upd.get(
-                        "total_elapsed_time", time.time() - loop_start_time
-                    )
                     cpu_final_solve = upd.get("total_solve_time", 0.0)
                     with cpu_progress_placeholder.container():
                         st.success(f"CPU completed (solver: {cpu_final_solve:.2f}s)")
@@ -2435,13 +2665,10 @@ def run_progressive_rebalancing(
         now = time.time()
         if now - last_idle_render_time >= 1.0:
             last_idle_render_time = now
-            total_elapsed = now - loop_start_time
             if not gpu_done:
                 if gpu_last_progress:
-                    elapsed = now - gpu_last_progress_time
                     period = gpu_last_progress.get("period", 0)
                     total = max(1, gpu_last_progress.get("total_periods", 1))
-                    value = gpu_last_progress.get("portfolio_value", 0.0)
                     with gpu_solving_placeholder.container():
                         st.progress(
                             min(1.0, period / total),
@@ -2452,7 +2679,6 @@ def run_progressive_rebalancing(
                         st.progress(0.0, text="⏳ Waiting for GPU...")
             if not cpu_done:
                 if cpu_last_progress:
-                    elapsed = now - cpu_last_progress_time
                     period = cpu_last_progress.get("period", 0)
                     total = max(1, cpu_last_progress.get("total_periods", 1))
                     with cpu_solving_placeholder.container():
@@ -2679,6 +2905,26 @@ def main():
             help="Number of scenarios (num_scen) — how many return scenarios to simulate for risk estimation.",
         )
 
+        st.subheader("🧪 SOCP Variance Cap")
+        enable_socp_preview = st.checkbox(
+            "Enable SOCP Preview",
+            value=DefaultValues.ENABLE_SOCP_PREVIEW,
+            help=UIText.SOCP_PREVIEW_HELP,
+        )
+        if enable_socp_preview:
+            socp_variance_cap_multiplier = st.slider(
+                "Variance Budget",
+                float(InputLimits.SOCP_VARIANCE_CAP_MULTIPLIER_RANGE[0]),
+                float(InputLimits.SOCP_VARIANCE_CAP_MULTIPLIER_RANGE[1]),
+                float(DefaultValues.SOCP_VARIANCE_CAP_MULTIPLIER),
+                float(InputLimits.SOCP_VARIANCE_CAP_MULTIPLIER_STEP),
+                help=UIText.SOCP_VARIANCE_CAP_HELP,
+            )
+        else:
+            socp_variance_cap_multiplier = float(
+                DefaultValues.SOCP_VARIANCE_CAP_MULTIPLIER
+            )
+
         # Rebalancing Strategy (simplified)
         st.subheader("🧭 Rebalancing Trigger")
         strategy_display = {
@@ -2859,8 +3105,14 @@ def main():
             help="Choose which CPU optimization engine to compare against GPU.",
         )
 
-        # Run button
+        # Run buttons
         st.markdown("---")
+        run_socp_btn = False
+        if enable_socp_preview:
+            run_socp_btn = st.button(
+                "🧪 Run SOCP Preview",
+                width="stretch",
+            )
         run_btn = st.button(
             "🚀 Run Rebalancing",
             type="primary",
@@ -3135,11 +3387,49 @@ def main():
         st.caption("GPU speedups grow with problem size: up to 232x at 50k scenarios.")
 
     with tab_demo:
-        if not run_btn:
+        if not run_btn and not run_socp_btn:
             st.info(
-                "👈 **Configure parameters in the sidebar and click "
-                "'Run Rebalancing' to start the live demo.**"
+                "👈 **Configure parameters in the sidebar, then run the "
+                "SOCP preview or the rebalancing demo.**"
             )
+
+    # Run one-shot SOCP preview when requested
+    if run_socp_btn:
+        with tab_demo:
+            _inject_tab_switch(2)
+            dataset_path = (
+                workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+            )
+            if not dataset_path.exists():
+                st.error(f"❌ Dataset not found: {dataset_path}")
+                st.stop()
+
+            returns_compute_settings = ReturnsComputeSettings(
+                return_type=return_type, freq=1
+            )
+            trading_range = (
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d"),
+            )
+            with st.spinner("Solving direct cuOpt SOCP variance-cap portfolio..."):
+                try:
+                    socp_preview = run_socp_variance_limit_preview(
+                        dataset_path=str(dataset_path),
+                        trading_range=trading_range,
+                        returns_compute_settings=returns_compute_settings,
+                        variance_cap_multiplier=float(
+                            socp_variance_cap_multiplier
+                        ),
+                    )
+                except Exception as exc:
+                    socp_preview = {
+                        "success": False,
+                        "message": str(exc),
+                        "error": traceback.format_exc(),
+                    }
+            st.session_state["last_socp_preview"] = socp_preview
+            st.session_state["last_notional"] = int(notional)
+            st.session_state["last_blog_mode"] = blog_mode
 
     # Run optimization when button is pressed
     if run_btn:
@@ -3284,6 +3574,15 @@ def main():
             st.session_state["last_results"] = results
             st.session_state["last_notional"] = int(notional)
             st.session_state["last_blog_mode"] = blog_mode
+
+    # Display SOCP preview from session state
+    if "last_socp_preview" in st.session_state:
+      with tab_demo:
+        render_socp_preview(
+            st.session_state["last_socp_preview"],
+            st.session_state.get("last_notional", 100_000_000),
+            st.session_state.get("last_blog_mode", True),
+        )
 
     # Display results from session state (persists across selectbox reruns)
     if "last_results" in st.session_state:

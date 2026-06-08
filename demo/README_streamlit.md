@@ -1,6 +1,6 @@
 # cuFOLIO Rebalancing Demo — Streamlit App
 
-Interactive web application for GPU-accelerated dynamic portfolio rebalancing using Mean-CVaR optimization.
+Interactive web application for GPU-accelerated dynamic portfolio rebalancing using Mean-CVaR optimization and direct cuOpt SOCP variance-cap solves.
 
 ## Application
 
@@ -12,6 +12,7 @@ Dynamic portfolio rebalancing simulation with multiple trigger strategies.
 - Progressive backtesting with real-time cumulative return plots
 - GPU vs CPU solver comparison with KDE timing breakdown
 - Advanced mode for technical parameters: windows, transaction costs, turnover, and CVaR limits
+- Direct cuOpt SOCP/QCQP preview for hard variance-cap mean-variance portfolios
 - Masked dataset and solver names for conference presentations
 
 ## Quick Start
@@ -37,7 +38,7 @@ python -c 'from cufolio.utils import download_data; download_data("data/stock_da
 streamlit run demo/rebalancing_streamlit_app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
-Open `http://localhost:8501` for local runs. On a remote GPU instance, forward or expose port `8501` according to your environment.
+Open `http://localhost:8501` for local runs. On a remote GPU instance, forward or expose port `8501` according to your environment. Use **Run SOCP Preview** to solve a one-shot variance-capped portfolio visually, or **Run Rebalancing** for the full backtest comparison.
 
 ## Requirements
 
@@ -56,4 +57,4 @@ Open `http://localhost:8501` for local runs. On a remote GPU instance, forward o
 uv run python -c 'from cufolio.utils import download_data; download_data("data/stock_data", datasets=["sp500"])'
 ```
 
-**GPU Solver Unavailable**: The UI can still boot without a GPU, but the full GTC comparison needs cuOpt. Install the matching CUDA extra and run on an NVIDIA GPU instance.
+**GPU Solver Unavailable**: The UI can still boot without a GPU, but the full GTC comparison and SOCP preview need cuOpt. Install the matching CUDA extra and run on an NVIDIA GPU instance.

@@ -6,7 +6,6 @@ Configuration file containing all parameters for the efficient frontier app.
 Modify values here to customize app behavior without changing the main code.
 """
 
-from datetime import datetime
 
 import pandas as pd
 
@@ -51,6 +50,9 @@ class DefaultValues:
     CARDINALITY_LIMIT = 10  # Default maximum number of assets
     ENABLE_CVAR_LIMIT = False  # Enable hard CVaR limit by default
     CVAR_HARD_LIMIT = 0.02  # Default hard CVaR limit
+    ENABLE_SOCP_PREVIEW = True  # Show direct cuOpt SOCP preview controls
+    SOCP_VARIANCE_CAP_MULTIPLIER = 1.05  # Cap = equal-weight variance * multiplier
+    SOCP_TOP_HOLDINGS = 15  # Rows in the SOCP holdings table
 
 
 # =============================================================================
@@ -77,6 +79,7 @@ class InputLimits:
     TURNOVER_LIMIT_RANGE = (0.01, 2.0)  # Min and max turnover constraint
     CARDINALITY_LIMIT_RANGE = (1, None)  # Min cardinality (max set by dataset size)
     CVAR_HARD_LIMIT_RANGE = (0.001, 1.0)  # Min and max hard CVaR limit
+    SOCP_VARIANCE_CAP_MULTIPLIER_RANGE = (0.25, 3.0)
 
     # Step Sizes
     W_STEP = 0.1
@@ -91,6 +94,7 @@ class InputLimits:
     TURNOVER_LIMIT_STEP = 0.1
     CARDINALITY_LIMIT_STEP = 1
     CVAR_HARD_LIMIT_STEP = 0.001
+    SOCP_VARIANCE_CAP_MULTIPLIER_STEP = 0.05
 
 
 # =============================================================================
@@ -291,6 +295,8 @@ class UIText:
     TURNOVER_CONSTRAINT_HELP = "Limit portfolio turnover (L1 distance from previous weights) - useful for controlling transaction costs"
     CARDINALITY_CONSTRAINT_HELP = "Limit the maximum number of assets with non-zero weights - creates more focused portfolios"
     CVAR_LIMIT_HELP = "Set a hard upper limit on portfolio CVaR risk - ensures risk stays below threshold"
+    SOCP_PREVIEW_HELP = "Run a direct cuOpt mean-variance solve with a hard quadratic variance cap"
+    SOCP_VARIANCE_CAP_HELP = "Variance cap multiplier relative to the equal-weight portfolio variance; lower values force tighter risk budgets"
 
 
 # =============================================================================
