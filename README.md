@@ -95,10 +95,10 @@ source $HOME/.local/bin/env  # (sh, bash, zsh)
 # source $HOME/.local/bin/env.fish  # (fish)
 
 # Install with CUDA-specific dependencies
-uv sync --extra cuda12 # required for the cuOpt SOCP/QCQP preview until CUDA 13 26.8 wheels are published
+uv sync --extra cuda13 # this container image has cuda13
 
 # Optional: Install development tools
-uv sync --extra cuda12 --extra dev
+uv sync --extra cuda13 --extra dev
 
 # Create a Jupyter kernel for this environment
 uv run python -m ipykernel install --user --name=portfolio-opt --display-name "Portfolio Optimization"
@@ -107,13 +107,13 @@ uv run python -m ipykernel install --user --name=portfolio-opt --display-name "P
 uv run jupyter lab --no-browser --NotebookApp.token=''
 ```
 
-**Note:** The SOCP/QCQP demo currently needs the `cuda12` extra because the CUDA 13 cuML/cuOpt 26.8 wheels are not published yet. The `cuda13` extra remains available for non-SOCP GPU workflows on the latest published CUDA 13 cuML/cuOpt packages. The `uv sync` command automatically creates a virtual environment and installs all dependencies from `uv.lock`.
+**Note:** If you use a different container image than the suggested one above, during uv sync, please use the `--extra cuda12` or `--extra cuda13` flag to install the GPU packages (cuOpt, cuML) matching your container's CUDA version. The `uv sync` command automatically creates a virtual environment and installs all dependencies from `uv.lock`.
 
 **Tip:** To check your CUDA version, run `nvidia-smi` and look for "CUDA Version" in the output.
 
 **Important Notes:**
 - If you encounter "No space left on device" errors, set `UV_CACHE_DIR` to an alternate cache location: `export UV_CACHE_DIR=/path/to/cache/directory`
-- The `cuda12` and `cuda13` extras are mutually exclusive; use `cuda12` for the SOCP/QCQP preview until CUDA 13 26.8 wheels are published
+- The `cuda12` and `cuda13` extras are mutually exclusive - install only one based on your system's CUDA version
 - If you plan to run the Streamlit demo from this container, include `-p 8501:8501` when starting Docker. Docker port mappings cannot be added to an already-running container; restart the container with the port published if it was omitted.
 
 #### Using the Jupyter Kernel
