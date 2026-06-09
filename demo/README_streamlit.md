@@ -21,7 +21,7 @@ Use `uv` for the current cuFOLIO dependency set:
 
 ```bash
 # From the repository root
-uv sync --extra cuda13        # or: uv sync --extra cuda12
+uv sync --extra cuda12        # required for SOCP/QCQP preview today
 uv pip install -r demo/requirements.txt
 uv run python -c 'from cufolio.utils import download_data; download_data("data/stock_data", datasets=["sp500"])'
 uv run streamlit run demo/rebalancing_streamlit_app.py --server.address 0.0.0.0 --server.port 8501
@@ -32,7 +32,7 @@ For a standard virtual environment:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[cuda13]"       # or .[cuda12], or plain -e . for CPU-only setup
+pip install -e ".[cuda12]"       # required for SOCP/QCQP preview today
 pip install -r demo/requirements.txt
 python -c 'from cufolio.utils import download_data; download_data("data/stock_data", datasets=["sp500"])'
 streamlit run demo/rebalancing_streamlit_app.py --server.address 0.0.0.0 --server.port 8501
@@ -45,7 +45,7 @@ Open `http://localhost:8501` for local runs. On a remote GPU instance, forward o
 - Python 3.11+
 - Streamlit, Plotly, and Squarify from `demo/requirements.txt`
 - CVXPY and cuFOLIO core dependencies from `pyproject.toml`
-- Optional: NVIDIA GPU + CUDA with the matching `cuda12` or `cuda13` extra for cuOpt acceleration
+- Optional: NVIDIA GPU + `cuda12` extra for the cuOpt SOCP/QCQP preview; `cuda13` uses the latest published CUDA 13 packages but does not carry the 26.8 SOCP package line yet
 
 ## Troubleshooting
 
@@ -57,4 +57,4 @@ Open `http://localhost:8501` for local runs. On a remote GPU instance, forward o
 uv run python -c 'from cufolio.utils import download_data; download_data("data/stock_data", datasets=["sp500"])'
 ```
 
-**GPU Solver Unavailable**: The UI can still boot without a GPU, but the full GTC comparison and SOCP preview need cuOpt. Install the matching CUDA extra and run on an NVIDIA GPU instance.
+**GPU Solver Unavailable**: The UI can still boot without a GPU, but the full GTC comparison and SOCP preview need cuOpt. Install the `cuda12` extra for the SOCP/QCQP preview and run on an NVIDIA GPU instance.

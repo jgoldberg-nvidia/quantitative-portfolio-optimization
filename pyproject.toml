@@ -25,8 +25,8 @@ cuda12 = [
     "cuopt-cu12==26.8.*",
 ]
 cuda13 = [
-    "cuml-cu13==26.8.*",
-    "cuopt-cu13==26.8.*",
+    "cuml-cu13==26.4.*",
+    "cuopt-cu13==26.4.*",
 ]
 
 [tool.ruff]
