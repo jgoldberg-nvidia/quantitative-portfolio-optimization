@@ -45,7 +45,7 @@ Open `http://localhost:8501` for local runs. On a remote GPU instance, forward o
 - Python 3.11+
 - Streamlit, Plotly, and Squarify from `demo/requirements.txt`
 - CVXPY and cuFOLIO core dependencies from `pyproject.toml`
-- Optional: NVIDIA GPU + CUDA with the matching `cuda12` or `cuda13` extra for cuOpt acceleration
+- Optional: NVIDIA GPU + CUDA with `cuda12` for the full cuOpt/cuML 26.06 stack, `cuda13` for the current full CUDA 13 stack, or `cuda13-socp` for CUDA 13 SOCP-only cuOpt 26.06 preview
 
 ## Troubleshooting
 
@@ -57,4 +57,4 @@ Open `http://localhost:8501` for local runs. On a remote GPU instance, forward o
 uv run python -c 'from cufolio.utils import download_data; download_data("data/stock_data", datasets=["sp500"])'
 ```
 
-**GPU Solver Unavailable**: The UI can still boot without a GPU, but the full GTC comparison and SOCP preview need cuOpt. Install the matching CUDA extra and run on an NVIDIA GPU instance.
+**GPU Solver Unavailable**: The UI can still boot without a GPU, but the full GTC comparison and SOCP preview need cuOpt. Use `--extra cuda12` for full cuOpt/cuML 26.06 validation, `--extra cuda13` for the current full CUDA 13 stack, or `--extra cuda13-socp` for CUDA 13 SOCP-only preview with cuOpt 26.06.

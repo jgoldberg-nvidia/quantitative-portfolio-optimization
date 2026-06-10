@@ -44,8 +44,8 @@ Do not use it for generic finance summaries, price forecasting, neural-network t
 ## Prerequisites
 
 - Python environment with the installed `cufolio` package.
-- NVIDIA GPU runtime with cuOpt and cuML installed. Mean-Variance SOCP workflows require a cuOpt build with QCQP/SOCP support, such as the 26.08 line or newer.
-- CUDA extra matching the host, such as `uv sync --extra cuda12` or `uv sync --extra cuda13`.
+- NVIDIA GPU runtime with cuOpt and cuML installed. Mean-Variance SOCP workflows require a cuOpt build with QCQP/SOCP support, such as the 26.06 line or newer.
+- CUDA extra matching the host and workflow: `uv sync --extra cuda12` for full cuOpt/cuML 26.06 on CUDA 12, `uv sync --extra cuda13` for the current full CUDA 13 stack, or `uv sync --extra cuda13-socp` for CUDA 13 SOCP-only validation with cuOpt 26.06.
 - `cvxpy` exposing `cp.CUOPT`.
 - Network access on first run if the default price CSV must be downloaded.
 
@@ -243,7 +243,8 @@ Use the package APIs instead of reimplementing portfolio math or simulation loop
 ## Limitations
 
 - Requires an NVIDIA GPU with cuOpt and cuML; CPU solvers are intentionally disallowed.
-- Mean-Variance SOCP variance caps require cuOpt QCQP/SOCP support. Use the 26.08 line or newer when installing CUDA extras.
+- Mean-Variance SOCP variance caps require cuOpt QCQP/SOCP support. Use the 26.06 line or newer when installing CUDA extras.
+- `cuda13-socp` intentionally installs cuOpt without cuML because `cuml-cu13` 26.06 is not published yet; use it for direct SOCP/QCQP validation, not GPU KDE CVaR workflows.
 - Cardinality plus SOCP is treated as unsupported unless cuFOLIO exposes explicit mixed-integer conic support.
 - CPU-only eval containers can still validate routing, data handling, and reporting behavior, but they cannot produce a valid cuOpt solve. In that case, report the missing GPU/cuOpt runtime explicitly.
 - Default price data is a historical snapshot and may omit current constituents.
@@ -253,8 +254,8 @@ Use the package APIs instead of reimplementing portfolio math or simulation loop
 
 - Missing default CSV or `FileNotFoundError`: explain that cuFOLIO will fetch public market data with `download_data("data/stock_data", datasets=["sp500"])`; run it only after user confirmation.
 - `SolverError` or missing `cp.CUOPT`: install the CUDA extra matching the host and verify with `python -c "import cvxpy as cp; print(hasattr(cp, 'CUOPT'), cp.installed_solvers())"`.
-- `ImportError` for `cuml` or GPU KDE failures: confirm cuML is present with `python -c "import cuml"` and keep `KDESettings(device="GPU")`.
-- SOCP setup fails before solving: verify the installed `cuopt` package is on the 26.08 line or newer and that `MeanVarianceParameters.var_limit` is positive.
+- `ImportError` for `cuml` or GPU KDE failures: confirm cuML is present with `python -c "import cuml"` and keep `KDESettings(device="GPU")`. If using `cuda13-socp`, this is expected for CVaR/KDE; switch to `cuda12` or `cuda13` for cuML workflows.
+- SOCP setup fails before solving: verify the installed `cuopt` package is on the 26.06 line or newer and that `MeanVarianceParameters.var_limit` is positive.
 - Ordinary optimization returns all cash: set `c_max=0.0` in `CvarParameters`.
 - Solver reports infeasible or no solution: check for contradictory bounds, too few tickers for the requested caps/cardinality, or a date filter that leaves too little data; report the smallest constraint change that would make the request feasible.
 - Requested tickers are absent from the default CSV: report them and proceed with the remaining requested tickers.
